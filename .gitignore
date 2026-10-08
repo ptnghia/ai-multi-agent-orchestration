@@ -1,3 +1,4 @@
 node_modules/
-dist/
+dist/__tests__/
+dist/**/*.map
 .aio/

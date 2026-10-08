@@ -1,0 +1,7 @@
+#!/bin/sh
+# Keep the prebuilt CLI in dist/ in sync with src/, because installs from GitHub
+# (npm install -g github:...) use dist/ as committed and do not build.
+if git diff --cached --name-only | grep -qE '^(src/|tsconfig\.json|package\.json)'; then
+  npm run build --silent || { echo "pre-commit: build failed" >&2; exit 1; }
+  git add dist
+fi
