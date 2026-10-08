@@ -21,6 +21,11 @@ Yêu cầu: Node ≥ 20, git, `codex` và/hoặc `agy` đã đăng nhập (chạ
 Screenshot dùng `playwright-core` + Edge/Chrome có sẵn trên máy (không cần tải browser).
 Store: `~/.aio` (đổi bằng `AIO_HOME`).
 
+Hệ điều hành: Windows, macOS, Linux (CI chạy `npm test` trên cả ba). Trên macOS/Linux:
+- Nếu `npm install -g` báo lỗi quyền, dùng Node cài qua nvm/Homebrew thay vì `sudo`.
+- Screenshot dùng Chrome (hoặc Edge) có sẵn; đặt `AIO_BROWSER_CHANNEL=chrome` nếu cần.
+- Lệnh trong `env`/`verify` chạy bằng `/bin/sh`; trên Windows bằng `cmd.exe` — viết lệnh không phụ thuộc shell (`npm run …`, `node …`).
+
 ## Lệnh
 
 ```bash

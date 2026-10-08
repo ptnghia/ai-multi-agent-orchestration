@@ -1,6 +1,6 @@
 {
   "name": "aio",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "AI Orchestrator: Claude plans and reviews, Codex/AGY execute in git worktrees, AIO verifies.",
   "type": "module",
   "bin": {
