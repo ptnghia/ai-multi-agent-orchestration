@@ -58,7 +58,7 @@ Lệnh này an toàn để chạy lại bất cứ lúc nào:
 
 - File còn thiếu → **tạo** từ template.
 - `.claude/settings.json` đã có → **gộp** thêm hook SessionStart, giữ nguyên plugin/permission sẵn có, không nhân đôi hook.
-- `AGENTS.md` đã có (ví dụ template Expo) → **chèn** phần quy tắc AIO lên đầu, giữa hai marker `aio:agents`; lần chạy sau chỉ cập nhật phần đó.
+- `AGENTS.md` / `CLAUDE.md` đã có → **chèn** phần của AIO lên đầu, giữa hai marker `aio:agents` / `aio:claude`; lần chạy sau chỉ cập nhật phần đó, nội dung của bạn giữ nguyên.
 - `aio.defaults.json` được sinh theo **stack thật**: nhận diện npm/pnpm/yarn/bun từ lockfile, chỉ đưa vào `verify` các script `typecheck`/`lint`/`test` thực sự có trong `package.json`, và cảnh báo script nào còn thiếu.
 - Skill `aio-orchestrate` luôn được **cập nhật** lên bản AIO đang cài.
 - File khác đã có → **giữ nguyên** (thêm `--force` để ghi đè bằng template).
@@ -75,6 +75,7 @@ Những gì vừa được thêm:
 | `.context/ACTIVE.md` | Trạng thái hiện tại; phần giữa `aio:begin/end` do AIO tự sinh |
 | `.context/DECISIONS.md` | Các quyết định đã chốt, mỗi dòng một quyết định |
 | `.context/HISTORY.md` | Nhật ký do AIO ghi, tự xoay vòng |
+| `CLAUDE.md` | Chính sách cho Claude ở mọi phiên: việc nhỏ tự làm, việc lớn giao qua AIO, người dùng bảo tự làm thì tự làm |
 | `AGENTS.md` | Quy tắc cho Codex/AGY (Codex tự đọc file này) |
 | `aio.defaults.json` | Trường dùng chung cho mọi task (setup, verify, retry, timeout…) |
 | `docs/PRODUCT.md` | Khung spec sản phẩm |
@@ -100,6 +101,8 @@ cd E:/app/<ten-du-an> && claude
 ```
 
 Hỏi: *"Trạng thái dự án đang thế nào?"* → Claude phải trả lời được ngay từ `.context/` mà không cần đọc file. Nếu không: chạy `/hooks` để kiểm tra hook SessionStart.
+
+Sau đó **làm việc với Claude như bình thường**. Nhờ `CLAUDE.md` + skill, Claude tự chọn cách làm: yêu cầu nhỏ (sửa lỗi, đổi cấu hình, tài liệu) thì tự làm; tính năng lớn thì nói trước rằng sẽ giao qua AIO rồi lập task. Muốn Claude tự làm một việc lớn, chỉ cần nói "bạn tự làm".
 
 ---
 

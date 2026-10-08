@@ -1,6 +1,6 @@
 ---
 name: aio-orchestrate
-description: Orchestrate Codex/AGY execution agents through the AIO CLI while keeping Claude's own token use low. Use when planning, dispatching, reviewing or merging AIO tasks (task JSON specs, aio run/show/sheet/verify/approve/reject), when a task is handed back because the agents are out of quota, or when the user asks to delegate implementation to Codex or Antigravity.
+description: Orchestrate Codex/AGY execution agents through the AIO CLI while keeping Claude's own token use low. Use in any project that has an aio.defaults.json whenever the user asks for a feature or implementation work larger than a small edit (build, add, implement, refactor, generate images), and when planning, dispatching, reviewing or merging AIO tasks (task JSON specs, aio run/show/sheet/verify/approve/reject), when a task is handed back because the agents are out of quota, or when the user asks to delegate to Codex or Antigravity.
 ---
 
 # AIO orchestration playbook

@@ -8,8 +8,8 @@ const AIO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const TEMPLATE_DIR = path.join(AIO_ROOT, 'templates', 'project');
 const SKILL_FILE = path.join(AIO_ROOT, 'skills', 'aio-orchestrate', 'SKILL.md');
 const HOOK_SCRIPT = 'session-context.mjs';
-const AGENTS_BEGIN = '<!-- aio:agents:begin -->';
-const AGENTS_END = '<!-- aio:agents:end -->';
+/** Files the project may already own: AIO keeps its part between markers and never touches the rest. */
+const MARKED_FILES: Record<string, string> = { 'AGENTS.md': 'agents', 'CLAUDE.md': 'claude' };
 
 export type InitAction = 'created' | 'merged' | 'updated' | 'kept';
 export interface InitReport {
@@ -40,14 +40,16 @@ function mergeSettings(target: string, template: string): InitAction {
   return 'merged';
 }
 
-/** Puts the AIO rules at the top of an existing AGENTS.md between markers, so re-runs can refresh them. */
-function mergeAgents(target: string, template: string): InitAction {
-  const section = `${AGENTS_BEGIN}\n${fs.readFileSync(template, 'utf8').trim()}\n${AGENTS_END}`;
+/** Puts the AIO section at the top of an existing file between markers, so re-runs can refresh it. */
+function mergeMarkedSection(target: string, template: string, tag: string): InitAction {
+  const begin = `<!-- aio:${tag}:begin -->`;
+  const endMarker = `<!-- aio:${tag}:end -->`;
+  const section = `${begin}\n${fs.readFileSync(template, 'utf8').trim()}\n${endMarker}`;
   const text = fs.readFileSync(target, 'utf8');
-  const start = text.indexOf(AGENTS_BEGIN);
-  const end = text.indexOf(AGENTS_END);
+  const start = text.indexOf(begin);
+  const end = text.indexOf(endMarker);
   if (start !== -1 && end > start) {
-    const next = text.slice(0, start) + section + text.slice(end + AGENTS_END.length);
+    const next = text.slice(0, start) + section + text.slice(end + endMarker.length);
     if (next === text) return 'kept';
     fs.writeFileSync(target, next);
     return 'updated';
@@ -109,8 +111,8 @@ export function initProject(repoArg: string, force = false): InitReport {
 
     if (name === '.claude/settings.json' && exists) {
       report.files.push({ file: name, action: mergeSettings(target, source), note: 'SessionStart hook' });
-    } else if (name === 'AGENTS.md' && exists) {
-      report.files.push({ file: name, action: mergeAgents(target, source), note: 'AIO rules section' });
+    } else if (MARKED_FILES[name] && exists) {
+      report.files.push({ file: name, action: mergeMarkedSection(target, source, MARKED_FILES[name]), note: 'AIO section' });
     } else if (name === 'aio.defaults.json' && (!exists || force)) {
       writeDefaults(target, source, stack, report.warnings);
       report.files.push({ file: name, action: exists ? 'updated' : 'created', note: stack.install ? `setup: ${stack.install}` : undefined });

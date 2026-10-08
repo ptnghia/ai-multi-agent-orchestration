@@ -25,6 +25,7 @@ test('init merges into an existing project and detects its stack', () => {
   fs.mkdirSync(path.join(repo, '.claude'));
   fs.writeFileSync(path.join(repo, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'expo@x': true } }));
   fs.writeFileSync(path.join(repo, 'AGENTS.md'), 'This is an Expo app.\n\nExisting rules.\n');
+  fs.writeFileSync(path.join(repo, 'CLAUDE.md'), '# Team notes\n\nUse tabs.\n');
 
   const r = aio(['init', repo]);
   assert.equal(r.code, 0, r.err);
@@ -38,6 +39,8 @@ test('init merges into an existing project and detects its stack', () => {
   assert.equal(settings.hooks.SessionStart.length, 1);
   const agents = read(repo, 'AGENTS.md');
   assert.match(agents, /aio:agents:begin[\s\S]*Agent instructions[\s\S]*aio:agents:end -->\n\nThis is an Expo app\./);
+  assert.match(r.out, /merged\s+CLAUDE\.md/);
+  assert.match(read(repo, 'CLAUDE.md'), /aio:claude:begin[\s\S]*aio-orchestrate[\s\S]*aio:claude:end -->\n\n# Team notes\n\nUse tabs\./);
   const defaults = JSON.parse(read(repo, 'aio.defaults.json'));
   assert.deepEqual(defaults.verify, ['pnpm run typecheck', 'pnpm run test']);
   assert.deepEqual(defaults.post_merge_verify, ['pnpm run typecheck', 'pnpm run test']);
@@ -49,6 +52,7 @@ test('init merges into an existing project and detects its stack', () => {
   assert.match(again.out, /Already up to date\./);
   assert.equal(JSON.parse(read(repo, '.claude/settings.json')).hooks.SessionStart.length, 1);
   assert.equal(read(repo, 'AGENTS.md').match(/aio:agents:begin/g)?.length, 1);
+  assert.equal(read(repo, 'CLAUDE.md').match(/aio:claude:begin/g)?.length, 1);
 
   // A stale skill copy is refreshed even without --force.
   fs.writeFileSync(path.join(repo, '.claude/skills/aio-orchestrate/SKILL.md'), 'old');
@@ -61,7 +65,7 @@ test('init on a bare folder creates everything and warns about git and the stack
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /Not a git repository yet/);
   assert.match(r.out, /No package\.json found/);
-  for (const f of ['.claude/settings.json', '.claude/hooks/session-context.mjs', '.context/DECISIONS.md', 'docs/PRODUCT.md', 'AGENTS.md']) {
+  for (const f of ['.claude/settings.json', '.claude/hooks/session-context.mjs', '.context/DECISIONS.md', 'docs/PRODUCT.md', 'AGENTS.md', 'CLAUDE.md']) {
     assert.ok(fs.existsSync(path.join(repo, f)), f);
   }
 });
