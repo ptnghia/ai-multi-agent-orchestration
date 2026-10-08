@@ -20,11 +20,11 @@ node --version          # >= 20
 git --version
 codex login             # đăng nhập interactive một lần
 agy                     # mở một phiên interactive để đăng nhập, rồi thoát
-cd E:/app/AI-Multi-Agent-Orchestration && npm install && npm run build && npm link
+npm install -g --install-links github:ptnghia/ai-multi-agent-orchestration
 aio agents              # phải in: codex: available / agy: available
 ```
 
-Nếu `aio` không chạy được: mở lại terminal (PATH của npm link), hoặc chạy `node E:/app/AI-Multi-Agent-Orchestration/dist/cli.js`.
+Nếu `aio` không chạy được: mở lại terminal (PATH của npm global). Cập nhật AIO về sau: chạy lại lệnh `npm install -g …` ở trên.
 
 ---
 

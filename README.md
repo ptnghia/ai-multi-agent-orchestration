@@ -7,9 +7,15 @@ Thiết kế gốc: [AI-Multi-Agent-Orchestration-Claude-Codex-Antigravity.md](A
 ## Cài đặt
 
 ```bash
-npm install && npm run build && npm link   # → lệnh `aio` dùng được ở mọi thư mục
-npm test                                   # unit + end-to-end (agent giả lập, không tốn quota)
+npm install -g --install-links github:ptnghia/ai-multi-agent-orchestration
+aio --version
 ```
+
+- Cập nhật lên bản mới: chạy lại đúng lệnh trên.
+- Repo đang private: máy cần quyền đọc repo qua git (ví dụ đã `gh auth login` và `gh auth setup-git`).
+- Cờ `--install-links` là bắt buộc: thiếu nó, npm cài global từ git sẽ tạo symlink tới thư mục tạm rồi xoá mất.
+
+Phát triển AIO (sửa code): `git clone` repo, `npm install && npm link`, `npm test`. Hook `.githooks/pre-commit` tự build và commit `dist/` (bật bằng `git config core.hooksPath .githooks`).
 
 Yêu cầu: Node ≥ 20, git, `codex` và/hoặc `agy` đã đăng nhập (chạy interactive một lần).
 Screenshot dùng `playwright-core` + Edge/Chrome có sẵn trên máy (không cần tải browser).
