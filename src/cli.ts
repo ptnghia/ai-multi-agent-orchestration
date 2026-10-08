@@ -7,7 +7,7 @@ import { commitContext, recordEvent, syncActive } from './context.js';
 import { runShell, tail } from './exec.js';
 import * as git from './git.js';
 import { AGENTS, agentStatusLines, resetAgents } from './agents.js';
-import { initProject } from './init.js';
+import { AIO_ROOT, aioVersion, initProject } from './init.js';
 import { runTask, verifyTask } from './runner.js';
 import { isProcessAlive } from './util.js';
 import {
@@ -366,12 +366,17 @@ async function main(): Promise<void> {
       merge: { type: 'boolean' },
       message: { type: 'string', short: 'm' },
       'delete-branch': { type: 'boolean' },
-      verbose: { type: 'boolean', short: 'v' },
+      verbose: { type: 'boolean' },
+      version: { type: 'boolean', short: 'v' },
       out: { type: 'string', short: 'o' },
       help: { type: 'boolean', short: 'h' },
     },
   });
   const [cmd, ...args] = positionals;
+  if (values.version || cmd === 'version') {
+    console.log(`aio ${aioVersion()} (${AIO_ROOT})`);
+    return;
+  }
   const force = values.force ?? false;
   const needId = () => {
     if (!args[0]) throw new Error(`usage: aio ${cmd} <id>`);

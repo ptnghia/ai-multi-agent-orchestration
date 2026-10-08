@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { syncActive } from './context.js';
 
 /** Root of the AIO install (dist/ is one level below it). */
-const AIO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const AIO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+export function aioVersion(): string {
+  return (JSON.parse(fs.readFileSync(path.join(AIO_ROOT, 'package.json'), 'utf8')) as { version: string }).version;
+}
 const TEMPLATE_DIR = path.join(AIO_ROOT, 'templates', 'project');
 const SKILL_FILE = path.join(AIO_ROOT, 'skills', 'aio-orchestrate', 'SKILL.md');
 const HOOK_SCRIPT = 'session-context.mjs';

@@ -1,13 +1,23 @@
 {
   "name": "aio",
-  "version": "0.3.0",
-  "description": "AI Orchestrator MVP: Claude plans and reviews, Codex/AGY execute in git worktrees, AIO verifies.",
+  "version": "0.4.0",
+  "description": "AI Orchestrator: Claude plans and reviews, Codex/AGY execute in git worktrees, AIO verifies.",
   "type": "module",
   "bin": {
     "aio": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "!dist/__tests__",
+    "!dist/**/*.map",
+    "templates",
+    "skills",
+    "docs",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "dev": "tsc --watch",
     "test": "tsc && node --test --test-concurrency=1 \"dist/__tests__/*.test.js\""
   },
