@@ -1,0 +1,13 @@
+{
+  "id": "EX-01-feature",
+  "repo": "../..",
+  "objective": "One sentence: what must exist when the task is done.",
+  "files": ["src/…"],
+  "constraints": ["Only what is specific to this task; shared rules live in aio.defaults.json and AGENTS.md."],
+  "acceptance_criteria": ["Machine-checkable statements, e.g. 'tests in src/…/__tests__/x.test.ts cover A, B, C'."],
+  "allowed_paths": ["src/feature/**", "src/feature/__tests__/**"],
+  "review": {
+    "agent": "agy",
+    "rubric": ["Concrete, checkable criteria a reviewer can fail the work on."]
+  }
+}

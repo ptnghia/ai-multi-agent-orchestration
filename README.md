@@ -99,6 +99,8 @@ Các trường dùng chung đặt trong `<repo>/aio.defaults.json`.
 
 Playbook cho Claude Code: [skills/aio-orchestrate/SKILL.md](skills/aio-orchestrate/SKILL.md) — copy vào `<project>/.claude/skills/`.
 
+**Bắt đầu dự án mới:** xem [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) (template trong `templates/project/`).
+
 ## Lưu ý
 
 - `agy` mặc định chạy `--dangerously-skip-permissions`. Tắt bằng `"agy": {"skip_permissions": false}` và cấu hình allowlist trong `~/.gemini/antigravity-cli/settings.json`.

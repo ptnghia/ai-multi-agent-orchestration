@@ -1,0 +1,11 @@
+{
+  "agent": "codex",
+  "context": [
+    "Read AGENTS.md, docs/PRODUCT.md and .context/DECISIONS.md first. Shared contracts listed in PRODUCT.md must not be modified."
+  ],
+  "setup": ["npm ci --no-audit --no-fund"],
+  "verify": ["npm run typecheck", "npm run lint", "npm test"],
+  "post_merge_verify": ["npm run typecheck", "npm test"],
+  "auto_retries": 1,
+  "timeout_minutes": 45
+}
