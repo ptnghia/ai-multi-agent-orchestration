@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "test": "tsc && node --test --test-concurrency=1 \"dist/__tests__/*.test.js\""
   },
   "engines": {
     "node": ">=20"

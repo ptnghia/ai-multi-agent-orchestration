@@ -1,8 +1,10 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { TaskSpec, TaskState, TaskStatus } from './types.js';
 
-export const AIO_HOME = path.resolve(process.env.AIO_HOME ?? '.aio');
+/** One store for every project, so `aio` behaves the same from any directory. */
+export const AIO_HOME = path.resolve(process.env.AIO_HOME ?? path.join(os.homedir(), '.aio'));
 
 export const taskDir = (id: string) => path.join(AIO_HOME, 'tasks', id);
 export const attemptDir = (id: string, n: number) => path.join(taskDir(id), `attempt-${n}`);

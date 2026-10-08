@@ -6,7 +6,9 @@ import { makeContactSheet } from './contact-sheet.js';
 import { commitContext, recordEvent, syncActive } from './context.js';
 import { runShell, tail } from './exec.js';
 import * as git from './git.js';
-import { runTask } from './runner.js';
+import { AGENTS, agentStatusLines, resetAgents } from './agents.js';
+import { runTask, verifyTask } from './runner.js';
+import { isProcessAlive } from './util.js';
 import {
   AIO_HOME,
   listTaskIds,
@@ -20,7 +22,7 @@ import {
   taskDir,
   taskExists,
 } from './store.js';
-import type { TaskResult, TaskSpec, TaskStatus } from './types.js';
+import type { AgentName, TaskResult, TaskSpec, TaskStatus } from './types.js';
 
 const USAGE = `aio — AI orchestrator (store: ${AIO_HOME})
 
@@ -30,6 +32,9 @@ const USAGE = `aio — AI orchestrator (store: ${AIO_HOME})
   aio status                              list tasks with their last result
   aio show <id> [--json] [--diff]         compact review packet for the latest attempt
   aio sheet <id...> [-o file.png]         one contact sheet of the tasks' screenshots and images
+  aio verify <id>                         run all checks on the worktree as it is (after a handoff / manual work)
+  aio agents [reset [codex|agy]]          quota status of the execution agents; reset clears cool-downs
+  aio costs                               runs, time and tokens per agent and role
   aio approve <id> [--merge]              accept; --merge merges, then runs post_merge_verify
   aio reject <id> -m "feedback"           send back for rework with feedback
   aio clean <id> [--delete-branch]        remove the task worktree
@@ -64,6 +69,12 @@ function validateTask(raw: unknown, file: string): TaskSpec {
   if (!t || typeof t !== 'object') fail('not a JSON object');
   if (typeof t.id !== 'string' || !/^[A-Za-z0-9._-]+$/.test(t.id)) fail('id must match [A-Za-z0-9._-]+');
   if (t.agent !== 'codex' && t.agent !== 'agy') fail('agent must be "codex" or "agy"');
+  if (t.fallback_agent !== undefined && !['codex', 'agy', 'none'].includes(t.fallback_agent)) {
+    fail('fallback_agent must be "codex", "agy" or "none"');
+  }
+  if (t.env !== undefined && (typeof t.env !== 'object' || Object.values(t.env).some((v) => typeof v !== 'string'))) {
+    fail('env must be an object of strings');
+  }
   if (typeof t.objective !== 'string' || !t.objective.trim()) fail('objective is required');
   if (typeof t.repo !== 'string') fail('repo is required');
   for (const key of ['context', 'files', 'constraints', 'acceptance_criteria', 'setup', 'verify', 'expected_files', 'allowed_paths', 'post_merge_verify'] as const) {
@@ -94,8 +105,11 @@ function cmdCreate(files: string[], force: boolean): void {
 }
 
 function formatSummary(r: TaskResult): string {
+  if (r.status === 'handoff') {
+    return `HANDOFF ${r.task_id} — ${r.agent_run.error}\n  brief: ${path.join(taskDir(r.task_id), 'handoff.md')} (finish in the worktree, then: aio verify ${r.task_id})`;
+  }
   const lines = [
-    `${r.status === 'passed' ? 'PASS' : 'FAIL'} ${r.task_id} — attempt ${r.attempt}, ${r.files_changed.length} files, agent ${r.agent_run.duration_seconds}s`,
+    `${r.status === 'passed' ? 'PASS' : 'FAIL'} ${r.task_id} — attempt ${r.attempt} by ${r.agent}, ${r.files_changed.length} files, agent ${r.agent_run.duration_seconds}s`,
   ];
   for (const c of r.checks.filter((c) => !c.ok)) lines.push(`  - ${c.name}${c.detail ? `: ${oneLine(c.detail, 200)}` : ''}`);
   if (r.review) lines.push(`  review: ${r.review.verdict} — ${oneLine(r.review.summary, 200)}`);
@@ -104,16 +118,13 @@ function formatSummary(r: TaskResult): string {
 }
 
 async function cmdRun(ids: string[], concurrency: number, force: boolean, verbose: boolean): Promise<void> {
-  const runnable: TaskStatus[] = ['queued', 'rework', 'failed'];
-  const queue = ids.length ? ids : listTaskIds().filter((id) => ['queued', 'rework'].includes(loadState(id).status));
+  const auto: TaskStatus[] = ['queued', 'rework'];
+  const queue = ids.length ? ids : listTaskIds().filter((id) => auto.includes(loadState(id).status));
   if (!queue.length) {
     console.log('nothing to run');
     return;
   }
-  for (const id of queue) {
-    const s = loadState(id).status;
-    if (!force && !runnable.includes(s)) throw new Error(`${id} is ${s}; pass --force to run anyway`);
-  }
+  // runTask itself refuses approved tasks and tasks running in a live process.
   const results: Array<TaskResult | Error> = [];
   let next = 0;
   const worker = async () => {
@@ -135,7 +146,54 @@ async function cmdRun(ids: string[], concurrency: number, force: boolean, verbos
       `ran ${r.task_id} attempt ${r.attempt}: ${r.status}${failed.length ? ` (${oneLine(failed.join('; '), 120)})` : ''}`,
     );
   }
-  if (results.some((r) => r instanceof Error || r.status === 'failed')) process.exitCode = 1;
+  if (results.some((r) => r instanceof Error || r.status !== 'passed')) process.exitCode = 1;
+}
+
+async function cmdVerify(id: string): Promise<void> {
+  const r = await verifyTask(id);
+  console.log(formatSummary(r));
+  recordEvent(loadTask(id).repo, `verified manual work on ${id}: ${r.status}`);
+  if (r.status !== 'passed') process.exitCode = 1;
+}
+
+function cmdAgents(args: string[]): void {
+  if (args[0] === 'reset') {
+    const agent = args[1] as AgentName | undefined;
+    if (agent && !AGENTS.includes(agent)) throw new Error(`unknown agent ${agent}`);
+    resetAgents(agent);
+    console.log(`reset ${agent ?? 'all agents'}`);
+    return;
+  }
+  for (const line of agentStatusLines()) console.log(line);
+}
+
+function cmdCosts(): void {
+  const file = path.join(AIO_HOME, 'costs.jsonl');
+  if (!fs.existsSync(file)) {
+    console.log('no cost records yet');
+    return;
+  }
+  type Row = { runs: number; seconds: number; input: number; cached: number; output: number; quota: number };
+  const groups = new Map<string, Row>();
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean)) {
+    const e = JSON.parse(line) as { agent: string; role?: string; duration_seconds?: number; status?: string; usage?: Record<string, number> };
+    const key = `${e.agent} ${e.role ?? 'execute'}`;
+    const g = groups.get(key) ?? { runs: 0, seconds: 0, input: 0, cached: 0, output: 0, quota: 0 };
+    g.runs++;
+    g.seconds += e.duration_seconds ?? 0;
+    g.input += e.usage?.input_tokens ?? 0;
+    g.cached += e.usage?.cached_input_tokens ?? 0;
+    g.output += e.usage?.output_tokens ?? 0;
+    if (e.status === 'quota') g.quota++;
+    groups.set(key, g);
+  }
+  const k = (n: number) => `${(n / 1000).toFixed(0)}k`;
+  console.log('AGENT ROLE          RUNS  TIME     INPUT    CACHED   OUTPUT  QUOTA-STOPS');
+  for (const [key, g] of groups) {
+    console.log(
+      `${key.padEnd(18)}${String(g.runs).padStart(5)}  ${`${Math.round(g.seconds / 60)}m`.padStart(5)}  ${k(g.input).padStart(7)}  ${k(g.cached).padStart(7)}  ${k(g.output).padStart(7)}  ${String(g.quota).padStart(11)}`,
+    );
+  }
 }
 
 function cmdStatus(): void {
@@ -154,7 +212,8 @@ function cmdStatus(): void {
       const failed = r.checks.filter((c) => !c.ok).length;
       last = failed ? `${r.status} (${failed} failed)` : r.status;
     }
-    return [id, t.agent, s.status, String(s.attempts), last, t.objective.slice(0, 50)];
+    const status = s.status === 'running' && !isProcessAlive(s.pid) ? 'running (stale)' : s.status;
+    return [id, t.agent, status, String(s.attempts), last, t.objective.slice(0, 50)];
   });
   const header = ['ID', 'AGENT', 'STATUS', 'TRIES', 'LAST', 'OBJECTIVE'];
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
@@ -216,7 +275,7 @@ async function cmdApprove(id: string, merge: boolean, force: boolean): Promise<v
     console.log(`merged ${state.branch} into the current branch of ${task.repo}`);
     // Integration problems (stale generated types, conflicting changes) only show up on the merged tree.
     for (const command of task.post_merge_verify ?? []) {
-      const r = await runShell(command, { cwd: task.repo, timeoutMs: 10 * 60 * 1000 });
+      const r = await runShell(command, { cwd: task.repo, timeoutMs: 10 * 60 * 1000, env: task.env });
       if (r.code !== 0) {
         setStatus(state, 'failed', `post-merge verify failed: ${command}`);
         throw new Error(
@@ -298,6 +357,12 @@ async function main(): Promise<void> {
       return cmdRun(args, Math.max(1, Number(values.jobs ?? 2)), force, values.verbose ?? false);
     case 'sheet':
       return cmdSheet(args, values.out);
+    case 'verify':
+      return cmdVerify(needId());
+    case 'agents':
+      return cmdAgents(args);
+    case 'costs':
+      return cmdCosts();
     case 'context': {
       const repo = path.resolve(args[0] ?? '.');
       syncActive(repo);

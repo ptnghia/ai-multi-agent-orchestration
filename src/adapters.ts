@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { run, runCli, tail } from './exec.js';
+import { run, runCli, tail, type RunOptions, type RunResult } from './exec.js';
+import { isQuotaError, parseRetryAfterMinutes } from './quota.js';
 import type { AgentReport, AgentRun, TaskSpec, Usage } from './types.js';
 
 export interface AdapterContext {
@@ -21,6 +22,19 @@ function parseJson<T>(text: string): T | undefined {
   }
 }
 
+/** A .mjs/.js override (tests, wrappers) runs on this Node; anything else is launched as a CLI. */
+function runAgentBin(bin: string, args: string[], opts: Omit<RunOptions, 'shell'>, native: boolean): Promise<RunResult> {
+  if (/\.(mjs|cjs|js)$/i.test(bin)) return run(process.execPath, [bin, ...args], opts);
+  return native ? run(bin, args, opts) : runCli(bin, args, opts);
+}
+
+/** Fills quota fields from error text only; a successful run is never a quota failure. */
+function withQuota(result: AgentRun, errorText: string): AgentRun {
+  if (result.ok || !isQuotaError(errorText)) return result;
+  const minutes = parseRetryAfterMinutes(errorText);
+  return { ...result, quota_exhausted: true, ...(minutes ? { retry_after_minutes: minutes } : {}) };
+}
+
 const runCodex: Adapter = async (task, ctx) => {
   const reportFile = path.join(ctx.attemptDir, 'agent-report.json');
   const args = ['exec', '-C', ctx.worktree, '-s', task.codex?.sandbox ?? 'workspace-write', '--skip-git-repo-check'];
@@ -29,18 +43,22 @@ const runCodex: Adapter = async (task, ctx) => {
   if (task.model) args.push('-m', task.model);
   args.push('-'); // prompt from stdin: avoids Windows command-line quoting and length limits
 
-  const r = await runCli(process.env.AIO_CODEX_BIN ?? 'codex', args, {
-    cwd: ctx.worktree,
-    input: ctx.prompt,
-    timeoutMs: ctx.timeoutMs,
-  });
+  const r = await runAgentBin(
+    process.env.AIO_CODEX_BIN ?? 'codex',
+    args,
+    { cwd: ctx.worktree, input: ctx.prompt, timeoutMs: ctx.timeoutMs },
+    false,
+  );
   fs.writeFileSync(path.join(ctx.attemptDir, 'agent-events.jsonl'), r.stdout);
   fs.writeFileSync(path.join(ctx.attemptDir, 'agent-stderr.txt'), r.stderr);
 
   const usage: Usage = {};
+  const failures: string[] = [];
   for (const line of r.stdout.split(/\r?\n/)) {
-    const ev = parseJson<{ type?: string; usage?: Record<string, number> }>(line);
-    if (ev?.type !== 'turn.completed' || !ev.usage) continue;
+    const ev = parseJson<{ type?: string; usage?: Record<string, number>; message?: string; error?: { message?: string } }>(line);
+    if (!ev) continue;
+    if (ev.type === 'error' || ev.type === 'turn.failed') failures.push(ev.message ?? ev.error?.message ?? line);
+    if (ev.type !== 'turn.completed' || !ev.usage) continue;
     usage.input_tokens = (usage.input_tokens ?? 0) + (ev.usage.input_tokens ?? 0);
     usage.cached_input_tokens = (usage.cached_input_tokens ?? 0) + (ev.usage.cached_input_tokens ?? 0);
     usage.output_tokens = (usage.output_tokens ?? 0) + (ev.usage.output_tokens ?? 0);
@@ -48,15 +66,19 @@ const runCodex: Adapter = async (task, ctx) => {
   }
   const report = fs.existsSync(reportFile) ? parseJson<AgentReport>(fs.readFileSync(reportFile, 'utf8')) : undefined;
   const ok = r.code === 0 && !r.timedOut;
-  return {
-    ok,
-    exit_code: r.code,
-    timed_out: r.timedOut,
-    duration_seconds: Math.round(r.durationMs / 1000),
-    report,
-    usage,
-    ...(ok ? {} : { error: tail(r.stderr || r.stdout, 1500) }),
-  };
+  const errorText = [...failures, r.stderr].join('\n');
+  return withQuota(
+    {
+      ok,
+      exit_code: r.code,
+      timed_out: r.timedOut,
+      duration_seconds: Math.round(r.durationMs / 1000),
+      report,
+      usage,
+      ...(ok ? {} : { error: tail(failures.join('\n') || r.stderr || r.stdout, 1500) }),
+    },
+    errorText,
+  );
 };
 
 interface AgyOutput {
@@ -74,28 +96,31 @@ const runAgy: Adapter = async (task, ctx) => {
   if (task.model) args.push('--model', task.model);
 
   // agy is a native exe; its own --print-timeout fires first, ours is the backstop.
-  const r = await run(process.env.AIO_AGY_BIN ?? 'agy', args, { cwd: ctx.worktree, timeoutMs: ctx.timeoutMs + 60000 });
+  const r = await runAgentBin(process.env.AIO_AGY_BIN ?? 'agy', args, { cwd: ctx.worktree, timeoutMs: ctx.timeoutMs + 60000 }, true);
   fs.writeFileSync(path.join(ctx.attemptDir, 'agent-output.json'), r.stdout);
   fs.writeFileSync(path.join(ctx.attemptDir, 'agent-stderr.txt'), r.stderr);
 
   const out = parseJson<AgyOutput>(r.stdout.trim());
   if (out?.structured_output) writeReport(ctx.attemptDir, out.structured_output);
   const ok = r.code === 0 && !r.timedOut && out?.status === 'SUCCESS';
-  return {
-    ok,
-    exit_code: r.code,
-    timed_out: r.timedOut,
-    duration_seconds: Math.round(r.durationMs / 1000),
-    report: out?.structured_output,
-    usage: out?.usage && {
-      input_tokens: out.usage.input_tokens,
-      cached_input_tokens: out.usage.cache_read_tokens,
-      output_tokens: out.usage.output_tokens,
-      reasoning_tokens: out.usage.thinking_tokens,
-      total_tokens: out.usage.total_tokens,
+  return withQuota(
+    {
+      ok,
+      exit_code: r.code,
+      timed_out: r.timedOut,
+      duration_seconds: Math.round(r.durationMs / 1000),
+      report: out?.structured_output,
+      usage: out?.usage && {
+        input_tokens: out.usage.input_tokens,
+        cached_input_tokens: out.usage.cache_read_tokens,
+        output_tokens: out.usage.output_tokens,
+        reasoning_tokens: out.usage.thinking_tokens,
+        total_tokens: out.usage.total_tokens,
+      },
+      ...(ok ? {} : { error: out?.error || tail(r.stderr || r.stdout, 1500) || `agy status ${out?.status}` }),
     },
-    ...(ok ? {} : { error: out?.error || tail(r.stderr || r.stdout, 1500) || `agy status ${out?.status}` }),
-  };
+    [out?.error ?? '', r.stderr].join('\n'),
+  );
 };
 
 function writeReport(dir: string, report: AgentReport): void {

@@ -17,7 +17,7 @@ export interface ScreenshotPage {
 
 export interface ScreenshotSpec {
   /** Optional dev server started in the worktree before screenshots. */
-  server?: { command: string; url: string; timeout_seconds?: number };
+  server?: { command: string; url: string; timeout_seconds?: number; env?: Record<string, string> };
   pages: ScreenshotPage[];
 }
 
@@ -51,6 +51,12 @@ export interface TaskSpec {
     network?: boolean;
   };
   agy?: { skip_permissions?: boolean };
+  /** Agent that takes over when `agent` is out of quota (default: the other agent; "none" disables). */
+  fallback_agent?: AgentName | 'none';
+  /** Per-agent model, used when the task runs on that agent (e.g. after a failover). */
+  models?: Partial<Record<AgentName, string>>;
+  /** Extra environment variables for setup, verify, screenshot server and post-merge commands. */
+  env?: Record<string, string>;
   /** Extra attempts AIO starts by itself, feeding failed checks back to the agent (default 1). */
   auto_retries?: number;
   /** Cross-review by another agent after all machine checks pass. */
@@ -72,7 +78,11 @@ export interface ReviewVerdict {
   issues: { severity: 'major' | 'minor'; description: string }[];
 }
 
-export type TaskStatus = 'queued' | 'running' | 'review' | 'failed' | 'rework' | 'approved';
+/** `handoff`: every execution agent is out of quota; the orchestrator (Claude) does the work, then `aio verify`. */
+export type TaskStatus = 'queued' | 'running' | 'review' | 'failed' | 'rework' | 'handoff' | 'approved';
+
+/** Who produced an attempt: an execution agent, or the orchestrator working by hand after a handoff. */
+export type Executor = AgentName | 'manual';
 
 export interface TaskState {
   id: string;
@@ -84,6 +94,8 @@ export interface TaskState {
   feedback: string[];
   updated_at: string;
   history: { at: string; status: TaskStatus; note?: string }[];
+  /** PID of the AIO process running the task; lets a crashed run be detected as stale. */
+  pid?: number;
 }
 
 export interface AgentReport {
@@ -110,6 +122,10 @@ export interface AgentRun {
   report?: AgentReport;
   error?: string;
   usage?: Usage;
+  /** The agent stopped because its plan/quota/rate limit is exhausted. */
+  quota_exhausted?: boolean;
+  /** Minutes until the agent should be usable again, when its error message says so. */
+  retry_after_minutes?: number;
 }
 
 export interface Check {
@@ -130,8 +146,8 @@ export interface CommandResult {
 export interface TaskResult {
   task_id: string;
   attempt: number;
-  agent: AgentName;
-  status: 'passed' | 'failed';
+  agent: Executor;
+  status: 'passed' | 'failed' | 'handoff';
   finished_at: string;
   agent_run: AgentRun;
   checks: Check[];

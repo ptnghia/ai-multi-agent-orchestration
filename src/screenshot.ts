@@ -46,6 +46,7 @@ export async function takeScreenshots(
   spec: ScreenshotSpec,
   worktree: string,
   outDir: string,
+  env: Record<string, string> = {},
 ): Promise<{ checks: Check[]; files: string[] }> {
   const checks: Check[] = [];
   const files: string[] = [];
@@ -59,7 +60,12 @@ export async function takeScreenshots(
   try {
     if (spec.server) {
       let log = '';
-      server = spawn(spec.server.command, { cwd: worktree, shell: true, windowsHide: true });
+      server = spawn(spec.server.command, {
+        cwd: worktree,
+        shell: true,
+        windowsHide: true,
+        env: { ...process.env, ...env, ...spec.server.env },
+      });
       server.stdout?.on('data', (d) => (log += d));
       server.stderr?.on('data', (d) => (log += d));
       await waitForUrl(spec.server.url, (spec.server.timeout_seconds ?? 60) * 1000, server, () => log);

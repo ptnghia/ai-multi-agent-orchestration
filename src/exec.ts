@@ -5,6 +5,8 @@ export interface RunOptions {
   input?: string;
   timeoutMs?: number;
   shell?: boolean;
+  /** Added to (not replacing) the current environment. */
+  env?: Record<string, string>;
 }
 
 export interface RunResult {
@@ -27,7 +29,12 @@ export function killTree(child: ChildProcess): void {
 export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
-    const child = spawn(cmd, args, { cwd: opts.cwd, shell: opts.shell ?? false, windowsHide: true });
+    const child = spawn(cmd, args, {
+      cwd: opts.cwd,
+      shell: opts.shell ?? false,
+      windowsHide: true,
+      env: opts.env ? { ...process.env, ...opts.env } : process.env,
+    });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
