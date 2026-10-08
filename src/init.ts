@@ -82,20 +82,43 @@ function detectStack(repo: string): Stack {
   return { run: (s) => s, scripts };
 }
 
+/** Defaults written while the folder had no stack: no setup and no verify commands yet. */
+function isPlaceholderDefaults(file: string): boolean {
+  try {
+    const d = readJson(file);
+    return !d.setup?.length && !d.verify?.length;
+  } catch {
+    return false;
+  }
+}
+
+/** Sets only the stack-derived fields, keeping anything the user edited. */
+function fillStackCommands(target: string, stack: Stack, warnings: string[]): void {
+  const defaults = readJson(target);
+  applyStack(defaults, stack, warnings);
+  writeJson(target, defaults);
+}
+
 /** Fills setup/verify from the project's real package manager and scripts. */
 function writeDefaults(target: string, template: string, stack: Stack, warnings: string[]): void {
   const defaults = readJson(template);
+  applyStack(defaults, stack, warnings);
+  writeJson(target, defaults);
+}
+
+function applyStack(defaults: Record<string, any>, stack: Stack, warnings: string[]): void {
   defaults.setup = stack.install ? [stack.install] : [];
   const gates = ['typecheck', 'lint', 'test'].filter((s) => stack.scripts.includes(s));
   defaults.verify = gates.map(stack.run);
   defaults.post_merge_verify = gates.filter((s) => s !== 'lint').map(stack.run);
   const missing = ['typecheck', 'lint', 'test'].filter((s) => !stack.scripts.includes(s));
   if (!stack.install) {
-    warnings.push('No package.json found: set "setup" and "verify" in aio.defaults.json for this stack by hand.');
+    warnings.push(
+      'No package.json yet: aio.defaults.json has no setup/verify commands. Scaffold the project, then run `aio init` again to fill them in (or set them by hand for non-Node stacks).',
+    );
   } else if (missing.length) {
     warnings.push(`package.json has no ${missing.map((s) => `"${s}"`).join(', ')} script; add them (and make them pass) or edit "verify" in aio.defaults.json.`);
   }
-  writeJson(target, defaults);
 }
 
 /** Installs the AIO orchestration scaffold into a project; safe to re-run. */
@@ -128,6 +151,10 @@ export function initProject(repoArg: string, force = false): InitReport {
     } else if (name === 'aio.defaults.json' && (!exists || force)) {
       writeDefaults(target, source, stack, report.warnings);
       report.files.push({ file: name, action: exists ? 'updated' : 'created', note: stack.install ? `setup: ${stack.install}` : undefined });
+    } else if (name === 'aio.defaults.json' && isPlaceholderDefaults(target) && stack.install) {
+      // init ran before the project had a stack; now that it has one, fill in the real commands.
+      fillStackCommands(target, stack, report.warnings);
+      report.files.push({ file: name, action: 'updated', note: `filled from detected stack (setup: ${stack.install})` });
     } else if (!exists || force) {
       fs.copyFileSync(source, target);
       report.files.push({ file: name, action: exists ? 'updated' : 'created' });

@@ -94,6 +94,26 @@ git add -A && git commit -m "Add AIO orchestration scaffold"
 
 ---
 
+## Thứ tự khác: chạy `aio init` trước, để Claude dựng repo và khung
+
+Được hỗ trợ. Trên thư mục trống:
+
+```bash
+mkdir E:/app/<ten-du-an> && cd E:/app/<ten-du-an>
+aio init          # cảnh báo "chưa phải git" và "chưa có package.json" là bình thường
+claude            # rồi yêu cầu: "Tạo dự án <mô tả> bằng <stack> trong thư mục này"
+```
+
+`CLAUDE.md` có mục **Bootstrap**, nên Claude tự làm (không giao agent):
+1. `git init -b main`.
+2. Dựng khung bằng công cụ chính thức; nếu công cụ từ chối thư mục không trống thì dựng vào thư mục tạm rồi chuyển vào, giữ nguyên các file AIO.
+3. Làm cho `typecheck` / `lint` / `test` chạy và pass.
+4. **Chạy lại `aio init`**: gộp lại hook/`CLAUDE.md`/`AGENTS.md` nếu công cụ dựng khung đã ghi đè, và tự điền `setup`/`verify` vào `aio.defaults.json` (file này còn rỗng từ lần init đầu; các trường bạn đã sửa được giữ nguyên). Sau đó commit.
+
+Kiểm tra: `cat aio.defaults.json` phải có `setup` và `verify` không rỗng. Nếu tạo task khi `verify` còn rỗng, `aio create` sẽ cảnh báo.
+
+---
+
 ## Bước 3 — Mở phiên Claude Code trong dự án và kiểm tra
 
 ```bash

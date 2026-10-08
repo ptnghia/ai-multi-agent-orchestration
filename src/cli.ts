@@ -103,6 +103,9 @@ function cmdCreate(files: string[], force: boolean): void {
       setStatus(state, 'queued', `created from ${path.resolve(file)}`);
     }
     recordEvent(task.repo, `${exists ? 'updated' : 'queued'} ${task.id} (${task.agent}): ${oneLine(task.objective, 120)}`);
+    if (!task.verify?.length) {
+      console.log(`warning: ${task.id} has no verify commands, so only path/file checks will judge it. Add "verify" (or fill aio.defaults.json; re-run \`aio init\` after scaffolding).`);
+    }
     console.log(`${exists ? 'updated' : 'created'} ${task.id} (${task.agent})`);
   }
 }
