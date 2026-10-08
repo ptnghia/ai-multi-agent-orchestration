@@ -21,7 +21,16 @@ git --version
 codex login             # đăng nhập interactive một lần
 agy                     # mở một phiên interactive để đăng nhập, rồi thoát
 npm install -g --install-links github:ptnghia/ai-multi-agent-orchestration
-aio agents              # phải in: codex: available / agy: available
+aio doctor              # kiểm tra node, git, đăng nhập codex/agy, quota, MCP
+```
+
+Cài Context7 (tài liệu thư viện mới nhất) cho cả hai agent, một lần:
+
+```bash
+codex mcp add context7 -- npx -y @upstash/context7-mcp
+agy mcp add context7 npx -y @upstash/context7-mcp
+# rồi thêm dòng  startup_timeout_sec = 60  dưới [mcp_servers.context7] trong ~/.codex/config.toml
+aio doctor              # mọi dòng nên là [ ok ]
 ```
 
 Nếu `aio` không chạy được: mở lại terminal (PATH của npm global). Cập nhật AIO về sau: chạy lại lệnh `npm install -g …` ở trên.
@@ -251,9 +260,9 @@ aio costs                      # xem việc giao agent có đáng không
 
 ## Checklist nhanh
 
-- [ ] Bước 0: `aio agents` → cả hai available
+- [ ] Bước 0: `aio doctor` không còn FAIL; Context7 đã cài cho codex và agy
 - [ ] Repo git + baseline typecheck/lint/test xanh
-- [ ] `aio init`, xử lý cảnh báo, kiểm tra `aio.defaults.json`
+- [ ] `aio init`, xử lý cảnh báo, kiểm tra `aio.defaults.json`; `aio doctor .` sạch (MCP theo stack đã có)
 - [ ] Phiên Claude mới trả lời được "trạng thái dự án" ngay
 - [ ] `PRODUCT.md` + hợp đồng dữ liệu + `DECISIONS.md` đã có
 - [ ] Task của wave: vùng file riêng, tiêu chí đo được, có `review`/`screenshots` khi cần

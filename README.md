@@ -30,6 +30,7 @@ Hệ điều hành: Windows, macOS, Linux (CI chạy `npm test` trên cả ba). 
 
 ```bash
 aio init [dir]                       # cài bộ khung điều phối vào dự án (an toàn khi chạy lại)
+aio doctor [dir]                     # kiểm tra máy + dự án: công cụ, đăng nhập, quota, MCP, cấu hình
 aio create tasks/T-001.json          # đăng ký task → queued (gộp <repo>/aio.defaults.json)
 aio run [ids] -j 3                   # chạy song song; mỗi task 1 dòng kết quả
 aio status                           # trạng thái + kết quả gần nhất (phát hiện task "running (stale)")
@@ -80,6 +81,7 @@ aio context [repo]                   # sinh lại <repo>/.context/ACTIVE.md
   },
   "review": { "agent": "agy", "rubric": ["…"] },
   "models": { "codex": "…", "agy": "…" },  // model theo agent (an toàn khi failover)
+  "mcp": { "next": { "command": "npx", "args": ["-y", "next-devtools-mcp@latest"] } },  // MCP theo dự án (Codex, mỗi lần chạy)
   "auto_retries": 1,
   "timeout_minutes": 20,
   "codex": { "sandbox": "workspace-write", "network": false },
@@ -88,6 +90,16 @@ aio context [repo]                   # sinh lại <repo>/.context/ACTIVE.md
 ```
 
 Các trường dùng chung đặt trong `<repo>/aio.defaults.json`.
+
+## MCP
+
+| Phạm vi | MCP | Cách cài |
+|---|---|---|
+| Mọi dự án, Codex + AGY | **Context7** (tài liệu thư viện theo phiên bản) | Một lần: `codex mcp add context7 -- npx -y @upstash/context7-mcp` (thêm `startup_timeout_sec = 60` vào `[mcp_servers.context7]` trong `~/.codex/config.toml`) và `agy mcp add context7 npx -y @upstash/context7-mcp` |
+| Next.js 16+ | **next-devtools-mcp** | `aio init` tự thêm vào `aio.defaults.json` (Codex nhận mỗi lần chạy, đã duyệt sẵn) và `.mcp.json` (Claude); AGY chỉ có cấu hình global — `aio doctor` in lệnh |
+| Expo | **Expo MCP** (`https://mcp.expo.dev/mcp`, OAuth) | `aio init` thêm vào `.mcp.json` cho Claude; đăng nhập một lần bằng `/mcp` trong Claude Code. Agent dùng Context7 cho tài liệu Expo |
+
+Đã kiểm chứng headless (`codex exec`, `agy -p`). `aio doctor` báo thiếu gì và lệnh sửa.
 
 ## Phân vai (theo spike 2026-10-07)
 

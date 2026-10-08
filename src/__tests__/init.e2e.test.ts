@@ -94,6 +94,41 @@ test('init before scaffolding: a second init repairs what the generator overwrot
   assert.match(aio(['init', repo]).out, /Already up to date\./);
 });
 
+test('init adds stack MCP servers (Next.js 16 for agents and Claude, Expo for Claude) and doctor sees them', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aio-init-mcp-'));
+  fs.writeFileSync(
+    path.join(repo, 'package.json'),
+    JSON.stringify({ scripts: { test: 'jest' }, dependencies: { next: '^16.1.0', expo: '~57.0.0' } }),
+  );
+  fs.writeFileSync(path.join(repo, 'package-lock.json'), '{}');
+  fs.writeFileSync(path.join(repo, '.mcp.json'), JSON.stringify({ mcpServers: { mine: { command: 'x' } } }));
+
+  const r = aio(['init', repo]);
+  assert.match(r.out, /aio\.defaults\.json\s+\(setup: npm ci[^)]*; mcp for Codex: next\)/);
+  assert.match(r.out, /merged\s+\.mcp\.json\s+\(Claude Code: next, expo\)/);
+  const defaults = JSON.parse(read(repo, 'aio.defaults.json'));
+  assert.deepEqual(defaults.mcp.next.args, ['-y', 'next-devtools-mcp@latest']);
+  const servers = JSON.parse(read(repo, '.mcp.json')).mcpServers;
+  assert.deepEqual(servers.mine, { command: 'x' }, 'existing servers are kept');
+  assert.deepEqual(servers.expo, { type: 'http', url: 'https://mcp.expo.dev/mcp' });
+  assert.ok(JSON.stringify(servers.next).includes('next-devtools-mcp'));
+  assert.match(aio(['init', repo]).out, /Already up to date\./);
+
+  const git = (...a: string[]) => spawnSync('git', a, { cwd: repo });
+  git('init', '-q', '-b', 'main');
+  git('add', '-A');
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init');
+  const missingBin = path.join(repo, 'no-such-agent');
+  const d = spawnSync(process.execPath, [cli, 'doctor', repo], {
+    encoding: 'utf8',
+    env: { ...process.env, AIO_HOME: home, AIO_CODEX_BIN: missingBin, AIO_AGY_BIN: missingBin },
+  });
+  assert.match(d.stdout, /Codex gets "next" per run/);
+  assert.match(d.stdout, /Claude Code: "expo" in \.mcp\.json/);
+  assert.match(d.stdout, /\[ ok \] git\s+repository with at least one commit/);
+  assert.match(d.stdout, /codex CLI not installed/);
+});
+
 test('init on a bare folder creates everything and warns about git and the stack', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'aio-init-bare-'));
   const r = aio(['init', repo]);

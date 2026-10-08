@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { run, runCli, tail } from './exec.js';
+import { codexMcpArgs } from './mcp.js';
 import { isQuotaError, parseRetryAfterMinutes } from './quota.js';
 function parseJson(text) {
     try {
@@ -28,6 +29,7 @@ const runCodex = async (task, ctx) => {
     const args = ['exec', '-C', ctx.worktree, '-s', task.codex?.sandbox ?? 'workspace-write', '--skip-git-repo-check'];
     if (task.codex?.network)
         args.push('-c', 'sandbox_workspace_write.network_access=true');
+    args.push(...codexMcpArgs(task.mcp));
     args.push('--output-schema', ctx.schemaPath, '-o', reportFile, '--json');
     if (task.model)
         args.push('-m', task.model);

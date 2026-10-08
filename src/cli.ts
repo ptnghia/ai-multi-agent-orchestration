@@ -7,6 +7,7 @@ import { commitContext, recordEvent, syncActive } from './context.js';
 import { runShell, tail } from './exec.js';
 import * as git from './git.js';
 import { AGENTS, agentStatusLines, resetAgents } from './agents.js';
+import { checkMachine, checkProject, formatFindings } from './doctor.js';
 import { AIO_ROOT, aioVersion, initProject } from './init.js';
 import { runTask, verifyTask } from './runner.js';
 import { isProcessAlive } from './util.js';
@@ -28,6 +29,7 @@ import type { AgentName, TaskResult, TaskSpec, TaskStatus } from './types.js';
 const USAGE = `aio — AI orchestrator (store: ${AIO_HOME})
 
   aio init [dir] [--force]                install the orchestration scaffold into a project (safe to re-run)
+  aio doctor [dir]                        check tools, logins, quota, MCP servers and the project setup
   aio create <task.json...> [--force]     register tasks (status: queued); merges <repo>/aio.defaults.json
   aio run [id...] [-j N] [--force]        run tasks in parallel (default: all queued/rework); one line per task
           [--verbose]                     print full review packets instead
@@ -309,6 +311,20 @@ async function cmdDelete(id: string): Promise<void> {
   console.log(`${id} deleted`);
 }
 
+async function cmdDoctor(dir: string | undefined): Promise<void> {
+  const machine = await checkMachine();
+  console.log(formatFindings('Machine', machine));
+  const repo = path.resolve(dir ?? '.');
+  const isProject = dir !== undefined || ['aio.defaults.json', '.git'].some((p) => fs.existsSync(path.join(repo, p)));
+  const project = isProject ? await checkProject(repo) : [];
+  if (isProject) console.log('\n' + formatFindings(`Project ${repo}`, project));
+  const all = [...machine, ...project];
+  const fails = all.filter((x) => x.level === 'fail').length;
+  const warns = all.filter((x) => x.level === 'warn').length;
+  console.log(`\n${fails} problem(s), ${warns} warning(s)`);
+  if (fails) process.exitCode = 1;
+}
+
 function cmdInit(dir: string | undefined, force: boolean): void {
   const report = initProject(dir ?? '.', force);
   console.log(`AIO scaffold in ${report.repo}`);
@@ -402,6 +418,8 @@ async function main(): Promise<void> {
       return cmdDelete(needId());
     case 'init':
       return cmdInit(args[0], force);
+    case 'doctor':
+      return cmdDoctor(args[0]);
     case 'context': {
       const repo = path.resolve(args[0] ?? '.');
       syncActive(repo);

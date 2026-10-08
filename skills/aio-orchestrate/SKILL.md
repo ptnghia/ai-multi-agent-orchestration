@@ -21,11 +21,12 @@ CLI: `aio` (installed with `npm link` from the AIO repo; store in `~/.aio`, over
 - Prefer machine-checkable acceptance criteria. When quality is subjective (content, UX), encode the cheap heuristics as tests and add a `review` block so another agent checks the rubric before you do.
 - Environment variables go in `env` (task or `screenshots.server.env`), never inline shell syntax like `set X=1&&`.
 - If the agent-specific `model` matters, use `models: {"codex": "...", "agy": "..."}` so a failover does not pass one agent's model to the other.
+- Stack MCP servers (e.g. next-devtools for Next.js 16+) live in `aio.defaults.json` under `mcp`; Codex gets them per run, pre-approved. Agents also have Context7 for current library docs — tell them to use it for version-specific APIs.
 - Do not delegate tiny tasks (roughly < 100 changed lines): writing the spec and reviewing costs more than doing it.
 - Route by strength: Codex for code and image generation; AGY for Vietnamese prose/content and as cross-reviewer.
 
 ## 3. Running
-- Check `aio agents` at the start of a wave; it shows which agents are cooling down after hitting their quota.
+- Run `aio doctor` at the start of a wave (logins, quota cool-downs, MCP servers, project setup); fix any FAIL before dispatching.
 - `aio create <specs>` then `aio run <ids> -j N` as ONE background Bash command. Wait for its single completion notification. Do not use Monitor or poll logs.
 - AIO handles, without you: auto-retry of mechanical failures (`auto_retries`), and failover when an agent runs out of quota mid-task (the other agent continues the partial work in the same worktree; `fallback_agent: "none"` disables it).
 

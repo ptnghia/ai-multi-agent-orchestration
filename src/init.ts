@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncActive } from './context.js';
+import { claudeMcpEntry, EXPO_MCP, NEXT_DEVTOOLS } from './mcp.js';
+import { detectStack, type Stack } from './stack.js';
+import type { McpServer } from './types.js';
 
 /** Root of the AIO install (dist/ is one level below it). */
 export const AIO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -64,22 +67,60 @@ function mergeMarkedSection(target: string, template: string, tag: string): Init
 
 const hasTaskSpecs = (dir: string) => fs.existsSync(dir) && fs.readdirSync(dir).some((f) => f.endsWith('.json'));
 
-interface Stack {
-  install?: string;
-  run: (script: string) => string;
-  scripts: string[];
+/** MCP servers a project's stack calls for: per-run for Codex (aio.defaults.json), project-level for Claude (.mcp.json). */
+export function recommendedMcp(stack: Stack): { agents: Record<string, McpServer>; claude: Record<string, McpServer>; notes: string[] } {
+  const agents: Record<string, McpServer> = {};
+  const claude: Record<string, McpServer> = {};
+  const notes: string[] = [];
+  if (stack.nextMajor !== undefined) {
+    if (stack.nextMajor >= 16) {
+      agents.next = NEXT_DEVTOOLS;
+      claude.next = NEXT_DEVTOOLS;
+    } else {
+      notes.push(`next-devtools-mcp needs Next.js 16+ (project has ${stack.nextMajor}); skipped.`);
+    }
+  }
+  // Expo's remote server uses OAuth, which headless agents cannot complete; agents get Expo docs via Context7.
+  if (stack.hasExpo) claude.expo = EXPO_MCP;
+  return { agents, claude, notes };
 }
 
-function detectStack(repo: string): Stack {
-  const has = (f: string) => fs.existsSync(path.join(repo, f));
-  const pkgFile = path.join(repo, 'package.json');
-  const scripts = has('package.json') ? Object.keys(readJson(pkgFile).scripts ?? {}) : [];
-  if (has('pnpm-lock.yaml')) return { install: 'pnpm install --frozen-lockfile', run: (s) => `pnpm run ${s}`, scripts };
-  if (has('yarn.lock')) return { install: 'yarn install --frozen-lockfile', run: (s) => `yarn ${s}`, scripts };
-  if (has('bun.lock') || has('bun.lockb')) return { install: 'bun install --frozen-lockfile', run: (s) => `bun run ${s}`, scripts };
-  if (has('package-lock.json')) return { install: 'npm ci --no-audit --no-fund', run: (s) => `npm run ${s}`, scripts };
-  if (has('package.json')) return { install: 'npm install --no-audit --no-fund', run: (s) => `npm run ${s}`, scripts };
-  return { run: (s) => s, scripts };
+/** Adds missing stack MCP servers to aio.defaults.json and .mcp.json, never changing existing entries. */
+function configureMcp(repo: string, stack: Stack, report: InitReport): void {
+  const { agents, claude, notes } = recommendedMcp(stack);
+  report.warnings.push(...notes);
+
+  const defaultsFile = path.join(repo, 'aio.defaults.json');
+  if (Object.keys(agents).length && fs.existsSync(defaultsFile)) {
+    const defaults = readJson(defaultsFile);
+    const missing = Object.keys(agents).filter((name) => !defaults.mcp?.[name]);
+    if (missing.length) {
+      defaults.mcp = { ...(defaults.mcp ?? {}), ...Object.fromEntries(missing.map((n) => [n, agents[n]])) };
+      writeJson(defaultsFile, defaults);
+      const note = `mcp for Codex: ${missing.join(', ')}`;
+      const entry = report.files.find((f) => f.file === 'aio.defaults.json');
+      if (entry) {
+        if (entry.action === 'kept') entry.action = 'updated';
+        entry.note = entry.note ? `${entry.note}; ${note}` : note;
+      } else {
+        report.files.push({ file: 'aio.defaults.json', action: 'updated', note });
+      }
+    }
+  }
+
+  if (Object.keys(claude).length) {
+    const file = path.join(repo, '.mcp.json');
+    const exists = fs.existsSync(file);
+    const config = exists ? readJson(file) : {};
+    const missing = Object.keys(claude).filter((name) => !config.mcpServers?.[name]);
+    if (missing.length) {
+      config.mcpServers = { ...(config.mcpServers ?? {}), ...Object.fromEntries(missing.map((n) => [n, claudeMcpEntry(claude[n])])) };
+      writeJson(file, config);
+      report.files.push({ file: '.mcp.json', action: exists ? 'merged' : 'created', note: `Claude Code: ${missing.join(', ')}` });
+    } else {
+      report.files.push({ file: '.mcp.json', action: 'kept' });
+    }
+  }
 }
 
 /** Defaults written while the folder had no stack: no setup and no verify commands yet. */
@@ -175,6 +216,7 @@ export function initProject(repoArg: string, force = false): InitReport {
     report.files.push({ file: '.claude/skills/aio-orchestrate/SKILL.md', action: 'kept' });
   }
 
+  configureMcp(repo, stack, report);
   syncActive(repo);
   return report;
 }

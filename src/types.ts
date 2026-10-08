@@ -57,12 +57,22 @@ export interface TaskSpec {
   models?: Partial<Record<AgentName, string>>;
   /** Extra environment variables for setup, verify, screenshot server and post-merge commands. */
   env?: Record<string, string>;
+  /** Project MCP servers. Codex gets them per run (pre-approved); AGY only has global MCP config. */
+  mcp?: Record<string, McpServer>;
   /** Extra attempts AIO starts by itself, feeding failed checks back to the agent (default 1). */
   auto_retries?: number;
   /** Cross-review by another agent after all machine checks pass. */
   review?: ReviewSpec;
   /** Commands run in the repo right after `approve --merge`. */
   post_merge_verify?: string[];
+}
+
+/** stdio server (command/args/env) or streamable HTTP server (url). */
+export interface McpServer {
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: Record<string, string>;
 }
 
 export interface ReviewSpec {

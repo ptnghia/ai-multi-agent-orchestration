@@ -14,6 +14,23 @@ const { imageInfo } = await import('../image.js');
 const { candidateAgents, markUnavailable, pickAgent, resetAgents, isAvailable } = await import('../agents.js');
 const { appendHistory, syncActive } = await import('../context.js');
 const { runShell } = await import('../exec.js');
+const { codexMcpArgs } = await import('../mcp.js');
+
+test('project MCP servers become pre-approved per-run codex overrides', () => {
+  const args = codexMcpArgs({
+    next: { command: 'npx', args: ['-y', 'next-devtools-mcp@latest'], env: { DEBUG: '1' } },
+    remote: { url: 'https://example.com/mcp' },
+  });
+  const flags = args.filter((_, i) => i % 2 === 1);
+  assert.ok(args.every((a, i) => (i % 2 === 0 ? a === '-c' : true)));
+  assert.ok(flags.includes('mcp_servers.next.command="npx"'));
+  assert.ok(flags.includes('mcp_servers.next.args=["-y","next-devtools-mcp@latest"]'));
+  assert.ok(flags.includes('mcp_servers.next.env={ DEBUG = "1" }'));
+  assert.ok(flags.includes('mcp_servers.next.default_tools_approval_mode="approve"'));
+  assert.ok(flags.includes('mcp_servers.next.startup_timeout_sec=90'));
+  assert.ok(flags.includes('mcp_servers.remote.url="https://example.com/mcp"'));
+  assert.deepEqual(codexMcpArgs(undefined), []);
+});
 const { isProcessAlive } = await import('../util.js');
 
 test('a timed-out shell command is killed with its whole process tree', async () => {

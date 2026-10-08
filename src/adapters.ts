@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { run, runCli, tail, type RunOptions, type RunResult } from './exec.js';
+import { codexMcpArgs } from './mcp.js';
 import { isQuotaError, parseRetryAfterMinutes } from './quota.js';
 import type { AgentReport, AgentRun, TaskSpec, Usage } from './types.js';
 
@@ -39,6 +40,7 @@ const runCodex: Adapter = async (task, ctx) => {
   const reportFile = path.join(ctx.attemptDir, 'agent-report.json');
   const args = ['exec', '-C', ctx.worktree, '-s', task.codex?.sandbox ?? 'workspace-write', '--skip-git-repo-check'];
   if (task.codex?.network) args.push('-c', 'sandbox_workspace_write.network_access=true');
+  args.push(...codexMcpArgs(task.mcp));
   args.push('--output-schema', ctx.schemaPath, '-o', reportFile, '--json');
   if (task.model) args.push('-m', task.model);
   args.push('-'); // prompt from stdin: avoids Windows command-line quoting and length limits
