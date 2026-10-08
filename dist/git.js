@@ -59,5 +59,10 @@ export async function discardUnstaged(wt) {
     }
     return leftovers;
 }
-export const mergeBranch = (repo, branch, message) => git(repo, ['merge', '--no-ff', branch, '-m', message]);
+/** Merges as the user when git knows who they are; on a machine without an identity, as "aio". */
+export async function mergeBranch(repo, branch, message) {
+    const email = await run('git', ['config', 'user.email'], { cwd: repo });
+    const identity = email.code === 0 && email.stdout.trim() ? [] : ['-c', 'user.name=aio', '-c', 'user.email=aio@localhost'];
+    return git(repo, [...identity, 'merge', '--no-ff', branch, '-m', message]);
+}
 //# sourceMappingURL=git.js.map
