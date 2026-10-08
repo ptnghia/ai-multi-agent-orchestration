@@ -54,6 +54,12 @@ test('init merges into an existing project and detects its stack', () => {
   assert.equal(read(repo, 'AGENTS.md').match(/aio:agents:begin/g)?.length, 1);
   assert.equal(read(repo, 'CLAUDE.md').match(/aio:claude:begin/g)?.length, 1);
 
+  // A deleted example task is not recreated once the project has its own specs.
+  fs.rmSync(path.join(repo, 'docs/tasks/EXAMPLE-01.json'));
+  fs.writeFileSync(path.join(repo, 'docs/tasks/W1-01.json'), '{}');
+  assert.match(aio(['init', repo]).out, /Already up to date\./);
+  assert.ok(!fs.existsSync(path.join(repo, 'docs/tasks/EXAMPLE-01.json')));
+
   // A stale skill copy is refreshed even without --force.
   fs.writeFileSync(path.join(repo, '.claude/skills/aio-orchestrate/SKILL.md'), 'old');
   assert.match(aio(['init', repo]).out, /updated\s+\.claude\/skills\/aio-orchestrate\/SKILL\.md/);
@@ -67,5 +73,10 @@ test('init on a bare folder creates everything and warns about git and the stack
   assert.match(r.out, /No package\.json found/);
   for (const f of ['.claude/settings.json', '.claude/hooks/session-context.mjs', '.context/DECISIONS.md', 'docs/PRODUCT.md', 'AGENTS.md', 'CLAUDE.md']) {
     assert.ok(fs.existsSync(path.join(repo, f)), f);
+  }
+  // Re-running on files init itself created must not stack a second AIO section.
+  assert.match(aio(['init', repo]).out, /Already up to date\./);
+  for (const [f, tag] of [['CLAUDE.md', 'claude'], ['AGENTS.md', 'agents']]) {
+    assert.equal(read(repo, f).match(new RegExp(`aio:${tag}:begin`, 'g'))?.length, 1, f);
   }
 });

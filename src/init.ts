@@ -54,9 +54,11 @@ function mergeMarkedSection(target: string, template: string, tag: string): Init
     fs.writeFileSync(target, next);
     return 'updated';
   }
-  fs.writeFileSync(target, `${section}\n\n${text}`);
+  fs.writeFileSync(target, text.trim() ? `${section}\n\n${text}` : `${section}\n`);
   return 'merged';
 }
+
+const hasTaskSpecs = (dir: string) => fs.existsSync(dir) && fs.readdirSync(dir).some((f) => f.endsWith('.json'));
 
 interface Stack {
   install?: string;
@@ -111,8 +113,14 @@ export function initProject(repoArg: string, force = false): InitReport {
 
     if (name === '.claude/settings.json' && exists) {
       report.files.push({ file: name, action: mergeSettings(target, source), note: 'SessionStart hook' });
-    } else if (MARKED_FILES[name] && exists) {
-      report.files.push({ file: name, action: mergeMarkedSection(target, source, MARKED_FILES[name]), note: 'AIO section' });
+    } else if (name.startsWith('docs/tasks/') && !exists && hasTaskSpecs(path.dirname(target))) {
+      // The example is only a starting point; a project with real specs does not need it back.
+      report.files.push({ file: name, action: 'kept', note: 'skipped: project already has task specs' });
+    } else if (MARKED_FILES[name] && (exists || !force)) {
+      // Fresh files get the markers too, so later runs recognise the AIO section instead of adding another.
+      if (!exists) fs.writeFileSync(target, '');
+      const action = mergeMarkedSection(target, source, MARKED_FILES[name]);
+      report.files.push({ file: name, action: exists ? action : 'created', note: 'AIO section' });
     } else if (name === 'aio.defaults.json' && (!exists || force)) {
       writeDefaults(target, source, stack, report.warnings);
       report.files.push({ file: name, action: exists ? 'updated' : 'created', note: stack.install ? `setup: ${stack.install}` : undefined });
