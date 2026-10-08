@@ -1,21 +1,55 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+const POSIX = process.platform !== 'win32';
+const live = new Set();
+let cleanupInstalled = false;
+/**
+ * Kills a child and everything it started (shell → npx → node dev server, agent → its tools).
+ * POSIX children are spawned as process-group leaders, so the whole group is signalled,
+ * even when the leader itself already exited and left grandchildren behind.
+ */
 export function killTree(child) {
-    if (child.pid === undefined || child.exitCode !== null)
+    if (child.pid === undefined)
         return;
-    if (process.platform === 'win32') {
-        spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+    if (POSIX) {
+        try {
+            process.kill(-child.pid, 'SIGKILL');
+        }
+        catch {
+            // group already gone
+        }
+        return;
     }
-    else {
-        child.kill('SIGKILL');
+    if (child.exitCode !== null)
+        return;
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+}
+/** Detached children no longer receive the terminal's Ctrl+C, so AIO forwards it by killing them. */
+function installCleanup() {
+    if (cleanupInstalled)
+        return;
+    cleanupInstalled = true;
+    for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+        process.once(signal, () => {
+            for (const child of live)
+                killTree(child);
+            process.exit(130);
+        });
     }
+}
+/** spawn() for anything AIO may need to stop: own process group on POSIX, tracked for Ctrl+C. */
+export function spawnTracked(command, args, options) {
+    installCleanup();
+    const child = spawn(command, args, { ...options, detached: POSIX, windowsHide: true });
+    live.add(child);
+    child.on('close', () => live.delete(child));
+    return child;
 }
 export function run(cmd, args, opts = {}) {
     return new Promise((resolve, reject) => {
         const start = Date.now();
-        const child = spawn(cmd, args, {
+        const child = spawnTracked(cmd, args, {
             cwd: opts.cwd,
             shell: opts.shell ?? false,
-            windowsHide: true,
             env: opts.env ? { ...process.env, ...opts.env } : process.env,
         });
         let stdout = '';

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 // Isolated store for this test process; must be set before AIO modules load.
 process.env.AIO_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'aio-unit-'));
@@ -12,6 +13,18 @@ const { globToRegExp, normalizeClaim } = await import('../util.js');
 const { imageInfo } = await import('../image.js');
 const { candidateAgents, markUnavailable, pickAgent, resetAgents, isAvailable } = await import('../agents.js');
 const { appendHistory, syncActive } = await import('../context.js');
+const { runShell } = await import('../exec.js');
+const { isProcessAlive } = await import('../util.js');
+
+test('a timed-out shell command is killed with its whole process tree', async () => {
+  const fixture = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../test/fixtures/spawn-grandchild.mjs');
+  const pidFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'aio-kill-')), 'pid');
+  const r = await runShell(`node "${fixture}" "${pidFile}"`, { timeoutMs: 1500 });
+  assert.equal(r.timedOut, true);
+  const grandchild = Number(fs.readFileSync(pidFile, 'utf8'));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.equal(isProcessAlive(grandchild), false, `grandchild ${grandchild} survived`);
+});
 
 test('quota errors are recognised for both CLIs, other failures are not', () => {
   assert.ok(isQuotaError("You've hit your usage limit. Try again in 2 days 5 hours."));

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { killTree, tail } from './exec.js';
+import { killTree, spawnTracked, tail } from './exec.js';
 import type { Check, ScreenshotSpec } from './types.js';
 
 async function waitForUrl(url: string, timeoutMs: number, server: ChildProcess, log: () => string): Promise<void> {
@@ -60,10 +60,9 @@ export async function takeScreenshots(
   try {
     if (spec.server) {
       let log = '';
-      server = spawn(spec.server.command, {
+      server = spawnTracked(spec.server.command, [], {
         cwd: worktree,
         shell: true,
-        windowsHide: true,
         env: { ...process.env, ...env, ...spec.server.env },
       });
       server.stdout?.on('data', (d) => (log += d));
