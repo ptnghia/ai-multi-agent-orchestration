@@ -38,6 +38,7 @@ const USAGE = `aio — AI orchestrator (store: ${AIO_HOME})
   aio approve <id> [--merge]              accept; --merge merges, then runs post_merge_verify
   aio reject <id> -m "feedback"           send back for rework with feedback
   aio clean <id> [--delete-branch]        remove the task worktree
+  aio delete <id>                         remove a task completely (worktree, branch, records)
   aio context [repo]                      regenerate <repo>/.context/ACTIVE.md (also done on every event)
 `;
 
@@ -292,6 +293,17 @@ async function cmdApprove(id: string, merge: boolean, force: boolean): Promise<v
   console.log(`${id} approved${merge ? '' : ` (merge later with: git -C "${task.repo}" merge --no-ff ${state.branch})`}`);
 }
 
+/** Removes a task entirely (worktree, branch, records); for experiments and mistakes, not history. */
+async function cmdDelete(id: string): Promise<void> {
+  const task = loadTask(id);
+  const state = loadState(id);
+  if (state.worktree && fs.existsSync(state.worktree)) await git.removeWorktree(task.repo, state.worktree);
+  if (state.branch) await git.deleteBranch(task.repo, state.branch).catch(() => {});
+  fs.rmSync(taskDir(id), { recursive: true, force: true });
+  syncActive(task.repo);
+  console.log(`${id} deleted`);
+}
+
 async function cmdSheet(ids: string[], out: string | undefined): Promise<void> {
   if (!ids.length) throw new Error('usage: aio sheet <id...> [-o file.png]');
   const files: string[] = [];
@@ -363,6 +375,8 @@ async function main(): Promise<void> {
       return cmdAgents(args);
     case 'costs':
       return cmdCosts();
+    case 'delete':
+      return cmdDelete(needId());
     case 'context': {
       const repo = path.resolve(args[0] ?? '.');
       syncActive(repo);
