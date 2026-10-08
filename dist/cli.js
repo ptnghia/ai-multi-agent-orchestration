@@ -25,7 +25,8 @@ const USAGE = `aio — AI orchestrator (store: ${AIO_HOME})
   aio verify <id>                         run all checks on the worktree as it is (after a handoff / manual work)
   aio agents [reset [codex|agy]]          quota status of the execution agents; reset clears cool-downs
   aio costs                               runs, time and tokens per agent and role
-  aio approve <id> [--merge]              accept; --merge merges, then runs post_merge_verify
+  aio approve <id> [--merge]              accept; --merge merges, runs post_merge_verify, removes the worktree
+          [--keep-worktree]
   aio reject <id> -m "feedback"           send back for rework with feedback
   aio clean <id> [--delete-branch]        remove the task worktree
   aio delete <id>                         remove a task completely (worktree, branch, records)
@@ -73,7 +74,7 @@ function validateTask(raw, file) {
         fail('objective is required');
     if (typeof t.repo !== 'string')
         fail('repo is required');
-    for (const key of ['context', 'files', 'constraints', 'acceptance_criteria', 'setup', 'verify', 'expected_files', 'allowed_paths', 'post_merge_verify']) {
+    for (const key of ['context', 'files', 'constraints', 'acceptance_criteria', 'setup', 'verify', 'expected_files', 'allowed_paths', 'post_merge_verify', 'depends_on']) {
         const v = t[key];
         if (typeof v === 'string')
             t[key] = [v];
@@ -94,6 +95,10 @@ function cmdCreate(files, force) {
         const exists = taskExists(task.id);
         if (exists && !force)
             throw new Error(`${task.id} already exists; pass --force to overwrite the spec`);
+        assertNoCycle(task);
+        const unknown = (task.depends_on ?? []).filter((d) => !taskExists(d));
+        if (unknown.length)
+            console.log(`note: ${task.id} depends on tasks not created yet: ${unknown.join(', ')}`);
         saveTask(task);
         if (!exists) {
             const state = newState(task.id);
@@ -106,6 +111,21 @@ function cmdCreate(files, force) {
         console.log(`${exists ? 'updated' : 'created'} ${task.id} (${task.agent})`);
     }
 }
+/** Dependencies of a task that are not approved yet. */
+function unmetDependencies(id) {
+    return (loadTask(id).depends_on ?? []).filter((d) => !taskExists(d) || loadState(d).status !== 'approved');
+}
+/** Rejects a dependency cycle among the registered tasks plus the one being created. */
+function assertNoCycle(task) {
+    const depsOf = (id) => (id === task.id ? (task.depends_on ?? []) : taskExists(id) ? (loadTask(id).depends_on ?? []) : []);
+    const visit = (id, trail) => {
+        if (trail.includes(id))
+            throw new Error(`dependency cycle: ${[...trail, id].join(' -> ')}`);
+        for (const d of depsOf(id))
+            visit(d, [...trail, id]);
+    };
+    visit(task.id, []);
+}
 function formatSummary(r) {
     if (r.status === 'handoff') {
         return `HANDOFF ${r.task_id} — ${r.agent_run.error}\n  brief: ${path.join(taskDir(r.task_id), 'handoff.md')} (finish in the worktree, then: aio verify ${r.task_id})`;
@@ -115,6 +135,8 @@ function formatSummary(r) {
     ];
     for (const c of r.checks.filter((c) => !c.ok))
         lines.push(`  - ${c.name}${c.detail ? `: ${oneLine(c.detail, 200)}` : ''}`);
+    for (const c of r.checks.filter((c) => c.ok && c.warn))
+        lines.push(`  ! ${c.name}${c.detail ? `: ${oneLine(c.detail, 200)}` : ''}`);
     if (r.review)
         lines.push(`  review: ${r.review.verdict} — ${oneLine(r.review.summary, 200)}`);
     if (r.contact_sheet)
@@ -123,11 +145,20 @@ function formatSummary(r) {
 }
 async function cmdRun(ids, concurrency, force, verbose) {
     const auto = ['queued', 'rework'];
-    const queue = ids.length ? ids : listTaskIds().filter((id) => auto.includes(loadState(id).status));
+    let queue = ids.length ? ids : listTaskIds().filter((id) => auto.includes(loadState(id).status));
     if (!queue.length) {
         console.log('nothing to run');
         return;
     }
+    // A task waits until every dependency is approved (merged), so it branches from code that contains them.
+    const blocked = force ? [] : queue.filter((id) => unmetDependencies(id).length);
+    for (const id of blocked) {
+        const waits = unmetDependencies(id).map((d) => `${d} (${taskExists(d) ? loadState(d).status : 'not created'})`);
+        console.log(`BLOCKED ${id} — waiting for ${waits.join(', ')}; approve --merge them, then run again`);
+    }
+    queue = queue.filter((id) => !blocked.includes(id));
+    if (!queue.length)
+        return;
     // runTask itself refuses approved tasks and tasks running in a live process.
     const results = [];
     let next = 0;
@@ -211,7 +242,8 @@ function cmdStatus() {
             const failed = r.checks.filter((c) => !c.ok).length;
             last = failed ? `${r.status} (${failed} failed)` : r.status;
         }
-        const status = s.status === 'running' && !isProcessAlive(s.pid) ? 'running (stale)' : s.status;
+        const waiting = s.status === 'queued' ? unmetDependencies(id) : [];
+        const status = s.status === 'running' && !isProcessAlive(s.pid) ? 'running (stale)' : waiting.length ? `blocked (${waiting.join(',')})` : s.status;
         return [id, t.agent, status, String(s.attempts), last, t.objective.slice(0, 50)];
     });
     const header = ['ID', 'AGENT', 'STATUS', 'TRIES', 'LAST', 'OBJECTIVE'];
@@ -266,7 +298,7 @@ function cmdShow(id, json, diff) {
     if (diff)
         console.log(fs.readFileSync(path.join(r.artifacts_dir, 'diff.patch'), 'utf8'));
 }
-async function cmdApprove(id, merge, force) {
+async function cmdApprove(id, merge, force, keepWorktree) {
     const task = loadTask(id);
     const state = loadState(id);
     if (state.status !== 'review' && !force)
@@ -287,6 +319,12 @@ async function cmdApprove(id, merge, force) {
             }
             console.log(`post-merge ok: ${command}`);
         }
+    }
+    // A merged worktree only costs disk (node_modules); the branch keeps its history.
+    if (merge && !keepWorktree && state.worktree && fs.existsSync(state.worktree)) {
+        await git.removeWorktree(task.repo, state.worktree);
+        state.worktree = undefined;
+        console.log(`removed worktree of ${id} (branch ${state.branch} kept)`);
     }
     setStatus(state, 'approved', merge ? 'merged' : undefined);
     recordEvent(task.repo, `approved ${id}${merge ? ' and merged' : ''}: ${oneLine(task.objective, 120)}`);
@@ -382,6 +420,7 @@ async function main() {
             merge: { type: 'boolean' },
             message: { type: 'string', short: 'm' },
             'delete-branch': { type: 'boolean' },
+            'keep-worktree': { type: 'boolean' },
             verbose: { type: 'boolean' },
             version: { type: 'boolean', short: 'v' },
             out: { type: 'string', short: 'o' },
@@ -429,7 +468,7 @@ async function main() {
         case 'show':
             return cmdShow(needId(), values.json ?? false, values.diff ?? false);
         case 'approve':
-            return cmdApprove(needId(), values.merge ?? false, force);
+            return cmdApprove(needId(), values.merge ?? false, force, values['keep-worktree'] ?? false);
         case 'reject':
             return cmdReject(needId(), values.message);
         case 'clean':

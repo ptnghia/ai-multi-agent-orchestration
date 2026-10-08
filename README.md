@@ -38,7 +38,7 @@ aio show T-001 [--diff] [--json]     # gói review gọn
 aio sheet T-001 T-002                # 1 contact sheet cho mọi screenshot/ảnh
 aio reject T-001 -m "feedback"       # → rework
 aio verify T-001                     # chạy toàn bộ check trên worktree (sau handoff / sửa tay)
-aio approve T-001 --merge            # merge + post_merge_verify + commit .context
+aio approve T-001 --merge            # merge + post_merge_verify + xoá worktree (--keep-worktree để giữ) + commit .context
 aio agents [reset [codex|agy]]       # quota: agent nào đang "nghỉ" đến khi nào
 aio costs                            # số lần chạy, thời gian, token theo agent/vai trò
 aio clean T-001 [--delete-branch]    # xoá worktree
@@ -64,6 +64,7 @@ aio context [repo]                   # sinh lại <repo>/.context/ACTIVE.md
   "id": "UI-019",                    // [A-Za-z0-9._-]+
   "agent": "codex",                  // "codex" | "agy"
   "fallback_agent": "agy",           // mặc định: agent còn lại; "none" = không chuyển
+  "depends_on": ["UI-018"],          // chờ task này được approve --merge rồi mới chạy (branch từ code đã có nó)
   "repo": "../my-app",               // tương đối với file task
   "base": "main",                    // mặc định HEAD
   "objective": "…",
@@ -127,7 +128,8 @@ Playbook cho Claude Code: [skills/aio-orchestrate/SKILL.md](skills/aio-orchestra
 
 ## Lưu ý
 
-- `agy` mặc định chạy `--dangerously-skip-permissions`. Tắt bằng `"agy": {"skip_permissions": false}` và cấu hình allowlist trong `~/.gemini/antigravity-cli/settings.json`.
+- **Quyền của agent:** `agy` mặc định chạy `--dangerously-skip-permissions`. Đã thử các cơ chế của chính AGY (2026-10-08, Windows): `--sandbox` **không** chặn ghi ra ngoài workspace; allowlist (`permissions.allow`) khớp với dòng lệnh đã bọc qua PowerShell và **một lệnh bị từ chối là dừng cả phiên** — không dùng được cho task thật. Vì vậy AIO tự bảo vệ ở tầng của nó: check `main checkout untouched` (agent ghi vào thư mục chính của repo → FAIL), `allowed_paths`, worktree riêng. Muốn cô lập thật sự: chạy agent trong container/VM. `"agy": {"skip_permissions": false}` vẫn dùng được nếu bạn tự cấu hình allowlist; AIO báo rõ lệnh nào bị từ chối.
+- AGY đôi khi kết thúc với `status: ERROR` (ví dụ "output token limit") sau khi đã làm xong: AIO dùng báo cáo cuối của nó, đánh dấu `! agent warning`, và để các check quyết định — không chạy lại vô ích.
 - Phát hiện quota dựa trên thông báo lỗi của CLI (usage limit, 429, RESOURCE_EXHAUSTED…), chỉ đọc phần lỗi, không đọc output bình thường.
 - Biến môi trường: `AIO_HOME`, `AIO_CODEX_BIN`, `AIO_AGY_BIN` (nhận cả script `.mjs`), `AIO_BROWSER_CHANNEL`.
 - Hai task sửa cùng file sẽ conflict khi merge — chia task theo module.

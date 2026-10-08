@@ -51,6 +51,8 @@ export interface TaskSpec {
     network?: boolean;
   };
   agy?: { skip_permissions?: boolean };
+  /** Tasks that must be approved (merged) before this one starts; it then branches from code that includes them. */
+  depends_on?: string[];
   /** Agent that takes over when `agent` is out of quota (default: the other agent; "none" disables). */
   fallback_agent?: AgentName | 'none';
   /** Per-agent model, used when the task runs on that agent (e.g. after a failover). */
@@ -136,12 +138,16 @@ export interface AgentRun {
   quota_exhausted?: boolean;
   /** Minutes until the agent should be usable again, when its error message says so. */
   retry_after_minutes?: number;
+  /** The agent reported a non-fatal problem; the run still counts as finished. */
+  warning?: string;
 }
 
 export interface Check {
   name: string;
   ok: boolean;
   skipped?: boolean;
+  /** Passing, but worth the reviewer's attention (shown in the one-line summary). */
+  warn?: boolean;
   detail?: string;
 }
 

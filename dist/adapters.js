@@ -79,9 +79,19 @@ const runAgy = async (task, ctx) => {
     const out = parseJson(r.stdout.trim());
     if (out?.structured_output)
         writeReport(ctx.attemptDir, out.structured_output);
-    const ok = r.code === 0 && !r.timedOut && out?.status === 'SUCCESS';
+    const errorText = [out?.error ?? '', r.stderr].join('\n');
+    const clean = r.code === 0 && !r.timedOut && out?.status === 'SUCCESS';
+    // agy can end with status ERROR after finishing the work (e.g. an intermediate turn hit the output
+    // token limit) yet still return its final structured report. Accept such a run as finished: the
+    // AIO checks decide whether the work is good. Quota failures and timeouts are never softened.
+    const soft = !clean && !r.timedOut && !!out?.structured_output && !isQuotaError(errorText);
+    const ok = clean || soft;
+    const denied = out?.denied_actions?.length
+        ? ` (denied: ${out.denied_actions.map((d) => d.display_name ?? d.action).join(', ')}; allow it in ~/.gemini/antigravity-cli/settings.json or set agy.skip_permissions)`
+        : '';
     return withQuota({
         ok,
+        ...(soft ? { warning: `agy ended with status ${out?.status}${out?.error ? `: ${tail(out.error, 300)}` : ''}; its final report was used` } : {}),
         exit_code: r.code,
         timed_out: r.timedOut,
         duration_seconds: Math.round(r.durationMs / 1000),
@@ -93,8 +103,8 @@ const runAgy = async (task, ctx) => {
             reasoning_tokens: out.usage.thinking_tokens,
             total_tokens: out.usage.total_tokens,
         },
-        ...(ok ? {} : { error: out?.error || tail(r.stderr || r.stdout, 1500) || `agy status ${out?.status}` }),
-    }, [out?.error ?? '', r.stderr].join('\n'));
+        ...(ok ? {} : { error: (out?.error || tail(r.stderr || r.stdout, 1500) || `agy status ${out?.status}`) + denied }),
+    }, errorText);
 };
 function writeReport(dir, report) {
     fs.writeFileSync(path.join(dir, 'agent-report.json'), JSON.stringify(report, null, 2));

@@ -90,6 +90,7 @@ function claimChecks(agentRun: AgentRun, attemptFiles: string[], wt: string): Ch
       ...(agentRun.ok ? {} : { detail: agentRun.timed_out ? 'timed out' : agentRun.error }),
     },
   ];
+  if (agentRun.warning) checks.push({ name: 'agent warning', ok: true, warn: true, detail: agentRun.warning });
   const report = agentRun.report;
   if (!report) {
     checks.push({ name: 'agent report', ok: false, detail: 'no structured report returned' });
@@ -148,7 +149,8 @@ export async function runTask(id: string, force = false): Promise<TaskResult> {
 
   let agent = pickAgent(task);
   if (!agent) return handoff(id, 'no execution agent is available (all out of quota)');
-  let result = await runAttempt(id, agent);
+  const mainBaseline = await git.statusLines(task.repo).catch(() => undefined);
+  let result = await runAttempt(id, agent, mainBaseline);
 
   for (;;) {
     if (result.agent_run.quota_exhausted) {
@@ -165,7 +167,7 @@ export async function runTask(id: string, force = false): Promise<TaskResult> {
       setStatus(state, 'rework', `failover ${agent} -> ${next}`);
       log(id, `failover: ${agent} -> ${next}`);
       agent = next;
-      result = await runAttempt(id, agent);
+      result = await runAttempt(id, agent, mainBaseline);
       continue;
     }
     if (result.status === 'failed' && result.agent_run.ok && retries > 0) {
@@ -174,7 +176,7 @@ export async function runTask(id: string, force = false): Promise<TaskResult> {
       state.feedback.push(autoFeedback(result));
       setStatus(state, 'rework', 'auto-retry');
       log(id, `auto-retry on ${agent}`);
-      result = await runAttempt(id, agent);
+      result = await runAttempt(id, agent, mainBaseline);
       continue;
     }
     return result;
@@ -237,7 +239,11 @@ async function handoff(id: string, reason: string): Promise<TaskResult> {
   return result;
 }
 
-async function runAttempt(id: string, executor: Executor): Promise<TaskResult> {
+/**
+ * @param mainBaseline `git status` of the main checkout when the task started; taken once per
+ *   runTask so a stray write by an early attempt is not absorbed into a later attempt's baseline.
+ */
+async function runAttempt(id: string, executor: Executor, mainBaseline?: string[]): Promise<TaskResult> {
   const task = loadTask(id);
   const state = loadState(id);
   const attempt = ++state.attempts;
@@ -277,6 +283,20 @@ async function runAttempt(id: string, executor: Executor): Promise<TaskResult> {
     fs.writeFileSync(path.join(dir, 'diff.patch'), await git.diffPatch(wt, base));
 
     const checks = executor === 'manual' ? [] : claimChecks(agentRun, attemptFiles, wt);
+
+    // Agents run with broad permissions (agy's own sandbox/allowlist proved ineffective), so AIO
+    // checks that the main checkout was not touched while the agent ran in its worktree.
+    if (mainBaseline && executor !== 'manual') {
+      const before = new Set(mainBaseline);
+      const changed = (await git.statusLines(task.repo).catch(() => [])).filter((l) => !before.has(l) && !l.slice(3).startsWith('.context/'));
+      checks.push({
+        name: 'main checkout untouched',
+        ok: changed.length === 0,
+        ...(changed.length
+          ? { detail: `changed during the run: ${changed.map((l) => l.slice(3)).join(', ')} — if you edited these yourself, run \`aio verify ${id}\`` }
+          : {}),
+      });
+    }
     try {
       await git.commitStaged(wt, `aio: ${id} attempt ${attempt} (${executor})`);
     } catch (e) {

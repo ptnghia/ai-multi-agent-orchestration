@@ -120,6 +120,66 @@ test('a task left "running" by a dead process is detected as stale and can be re
   assert.match(r.out, /PASS F4/);
 });
 
+function createSpec(spec: Record<string, unknown>): void {
+  const file = path.join(work, `${spec.id}.json`);
+  fs.writeFileSync(file, JSON.stringify({ objective: 'x', auto_retries: 0, ...spec }));
+  const r = aio(['create', file]);
+  assert.equal(r.code, 0, r.err);
+}
+
+test('agy ending with an output-limit ERROR but a final report counts as finished, with a warning', () => {
+  aio(['agents', 'reset']);
+  const repo = makeRepo();
+  createSpec({ id: 'W1', agent: 'agy', repo, verify: ['node check.js'] });
+  const r = aio(['run', 'W1'], { FAKE_AGY_MODE: 'outputlimit' });
+  assert.equal(r.code, 0, r.out + r.err);
+  assert.match(r.out, /PASS W1 — attempt 1 by agy/);
+  assert.match(r.out, /! agent warning: agy ended with status ERROR/);
+});
+
+test('an agent writing into the main checkout fails the task, also on later attempts', () => {
+  aio(['agents', 'reset']);
+  const repo = makeRepo();
+  createSpec({ id: 'W2', agent: 'codex', fallback_agent: 'none', repo, auto_retries: 1, verify: ['node check.js'] });
+  const r = aio(['run', 'W2'], { FAKE_CODEX_ESCAPE: path.join(repo, 'stray.txt') });
+  assert.equal(r.code, 1);
+  assert.match(r.out, /FAIL W2 — attempt 2/, 'the auto-retry must not absorb the stray file into its baseline');
+  assert.match(r.out, /main checkout untouched: changed during the run: stray\.txt/);
+});
+
+test('depends_on blocks until the dependency is merged; merge removes the worktree; the dependent branches from it', () => {
+  aio(['agents', 'reset']);
+  const repo = makeRepo();
+  createSpec({ id: 'D-A', agent: 'codex', repo, expected_files: ['a.txt'] });
+  createSpec({ id: 'D-B', agent: 'codex', repo, depends_on: ['D-A'], expected_files: ['b.txt'] });
+  assert.match(aio(['status']).out, /D-B\s+codex\s+blocked \(D-A\)/);
+
+  const first = aio(['run', 'D-A', 'D-B'], { FAKE_CODEX_FILE: 'a.txt' });
+  assert.match(first.out, /BLOCKED D-B — waiting for D-A \(queued\)/);
+  assert.match(first.out, /PASS D-A/);
+
+  const wtA = state('D-A').worktree;
+  const approve = aio(['approve', 'D-A', '--merge']);
+  assert.equal(approve.code, 0, approve.out + approve.err);
+  assert.match(approve.out, /removed worktree of D-A/);
+  assert.ok(!fs.existsSync(wtA));
+  assert.equal(state('D-A').worktree, undefined);
+
+  const second = aio(['run'], { FAKE_CODEX_FILE: 'b.txt' });
+  assert.match(second.out, /PASS D-B/);
+  assert.ok(fs.existsSync(path.join(state('D-B').worktree, 'a.txt')), 'D-B starts from code that contains D-A');
+});
+
+test('a dependency cycle is rejected at create', () => {
+  const repo = makeRepo();
+  createSpec({ id: 'C-1', agent: 'codex', repo, depends_on: ['C-2'] });
+  const file = path.join(work, 'C-2.json');
+  fs.writeFileSync(file, JSON.stringify({ id: 'C-2', agent: 'codex', repo, objective: 'x', depends_on: ['C-1'] }));
+  const r = aio(['create', file]);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /dependency cycle: C-2 -> C-1 -> C-2/);
+});
+
 test('costs aggregates execution runs and quota stops per agent', () => {
   const r = aio(['costs']);
   assert.match(r.out, /codex execute/);

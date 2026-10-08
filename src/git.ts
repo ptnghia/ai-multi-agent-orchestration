@@ -32,6 +32,12 @@ export const deleteBranch = (repo: string, branch: string) => git(repo, ['branch
 
 export const stageAll = (wt: string) => git(wt, ['add', '-A']);
 
+/** `git status --porcelain` lines of a checkout, for spotting writes made outside an agent's worktree. */
+export async function statusLines(dir: string): Promise<string[]> {
+  const out = await git(dir, ['status', '--porcelain']);
+  return out ? out.split(/\r?\n/) : [];
+}
+
 // The --cached diffs compare the index against a commit, so they work whether
 // or not the snapshot commit succeeded.
 export async function diffNames(wt: string, from: string): Promise<string[]> {

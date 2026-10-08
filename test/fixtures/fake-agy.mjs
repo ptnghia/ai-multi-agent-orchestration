@@ -10,6 +10,18 @@ if (mode === 'quota') {
 // agy works in its current directory (AIO starts it inside the worktree).
 fs.writeFileSync('fake.txt', 'written by agy\n');
 const report = { status: 'completed', summary: 'fake agy done', files_changed: ['fake.txt'], notes: '' };
+if (mode === 'outputlimit') {
+  // Seen in real runs: the work is done and reported, but an intermediate turn hit the output limit.
+  console.log(
+    JSON.stringify({
+      status: 'ERROR',
+      error: 'Your previous response was cut off because it exceeded the output token limit\nRetries remaining: 3',
+      response: JSON.stringify(report),
+      structured_output: report,
+    }),
+  );
+  process.exit(0);
+}
 console.log(
   JSON.stringify({
     status: 'SUCCESS',

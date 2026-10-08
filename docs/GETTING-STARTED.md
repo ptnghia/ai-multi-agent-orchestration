@@ -156,7 +156,7 @@ Nguyên tắc (Claude áp dụng, bạn kiểm tra khi duyệt):
 
 - **Không giao tác vụ nhỏ** (dưới ~100 dòng thay đổi): Claude tự làm rẻ hơn.
 - **Mỗi task một vùng file riêng** (`allowed_paths` không giao nhau) → chạy song song an toàn, merge không conflict.
-- **Phụ thuộc thì chia wave**: dữ liệu + logic trước, UI sau (UI cần id và kiểu dữ liệu thật).
+- **Phụ thuộc thì khai báo `depends_on`**: ví dụ task UI `"depends_on": ["W1-01-data"]`. `aio run` báo `BLOCKED` cho tới khi task kia được `approve --merge`, rồi lần `aio run` sau tự chạy nó trên code đã có phần phụ thuộc.
 - **Tiêu chí nghiệm thu kiểm tra được bằng máy**: "test X bao phủ A, B, C", "ảnh 1024x768 ≤ 200 KB", không phải "làm cho đẹp".
 - **Nội dung/UX chủ quan** → thêm `review` (AGY chấm rubric) và biến các tiêu chí dễ đo thành test (không trùng lặp, đủ số lượng, có đề cập nguyên liệu…).
 - **Phân vai**: code + sinh ảnh → `codex`; văn bản tiếng Việt, review chéo → `agy`. Agent còn lại tự động là dự phòng khi hết quota.
@@ -205,7 +205,7 @@ Kết quả có thể là:
 Claude giao việc review cho một subagent (prompt mẫu trong skill), subagent đọc `aio show <id>` + **một** contact sheet và trả lời ≤120 chữ. Sau đó:
 
 ```bash
-aio approve <id> --merge        # merge + post_merge_verify + commit .context
+aio approve <id> --merge        # merge + post_merge_verify + xoá worktree + commit .context
 aio reject <id> -m "Cụ thể: sai gì, ở đâu, kết quả mong đợi"
 aio run <id>                    # chạy lại sau reject
 ```
@@ -233,7 +233,7 @@ Nếu phần còn lại lớn: chờ hết thời gian nghỉ (`aio agents`) r�
 ## Bước 9 — Kết thúc wave
 
 ```bash
-aio clean <id>                 # xoá worktree (mỗi cái chứa node_modules riêng)
+aio clean <id>                 # chỉ cần cho task bỏ dở (approve --merge đã tự xoá worktree)
 aio costs                      # xem việc giao agent có đáng không
 ```
 

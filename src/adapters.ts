@@ -89,6 +89,8 @@ interface AgyOutput {
   response?: string;
   structured_output?: AgentReport;
   usage?: { input_tokens?: number; output_tokens?: number; thinking_tokens?: number; cache_read_tokens?: number; total_tokens?: number };
+  /** Tools refused in headless mode because no allow rule matched (allowlist mode). */
+  denied_actions?: { action?: string; display_name?: string }[];
 }
 
 const runAgy: Adapter = async (task, ctx) => {
@@ -104,10 +106,20 @@ const runAgy: Adapter = async (task, ctx) => {
 
   const out = parseJson<AgyOutput>(r.stdout.trim());
   if (out?.structured_output) writeReport(ctx.attemptDir, out.structured_output);
-  const ok = r.code === 0 && !r.timedOut && out?.status === 'SUCCESS';
+  const errorText = [out?.error ?? '', r.stderr].join('\n');
+  const clean = r.code === 0 && !r.timedOut && out?.status === 'SUCCESS';
+  // agy can end with status ERROR after finishing the work (e.g. an intermediate turn hit the output
+  // token limit) yet still return its final structured report. Accept such a run as finished: the
+  // AIO checks decide whether the work is good. Quota failures and timeouts are never softened.
+  const soft = !clean && !r.timedOut && !!out?.structured_output && !isQuotaError(errorText);
+  const ok = clean || soft;
+  const denied = out?.denied_actions?.length
+    ? ` (denied: ${out.denied_actions.map((d) => d.display_name ?? d.action).join(', ')}; allow it in ~/.gemini/antigravity-cli/settings.json or set agy.skip_permissions)`
+    : '';
   return withQuota(
     {
       ok,
+      ...(soft ? { warning: `agy ended with status ${out?.status}${out?.error ? `: ${tail(out.error, 300)}` : ''}; its final report was used` } : {}),
       exit_code: r.code,
       timed_out: r.timedOut,
       duration_seconds: Math.round(r.durationMs / 1000),
@@ -119,9 +131,9 @@ const runAgy: Adapter = async (task, ctx) => {
         reasoning_tokens: out.usage.thinking_tokens,
         total_tokens: out.usage.total_tokens,
       },
-      ...(ok ? {} : { error: out?.error || tail(r.stderr || r.stdout, 1500) || `agy status ${out?.status}` }),
+      ...(ok ? {} : { error: (out?.error || tail(r.stderr || r.stdout, 1500) || `agy status ${out?.status}`) + denied }),
     },
-    [out?.error ?? '', r.stderr].join('\n'),
+    errorText,
   );
 };
 

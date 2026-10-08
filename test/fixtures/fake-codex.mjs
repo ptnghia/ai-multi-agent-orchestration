@@ -18,7 +18,10 @@ process.stdin.on('end', () => {
     console.error(`ERROR: ${message}`);
     process.exit(1);
   }
-  fs.writeFileSync(path.join(worktree, 'fake.txt'), 'written by codex\n');
-  fs.writeFileSync(reportFile, JSON.stringify({ status: 'completed', summary: 'fake codex done', files_changed: ['fake.txt'], notes: '' }));
+  const file = process.env.FAKE_CODEX_FILE ?? 'fake.txt';
+  fs.writeFileSync(path.join(worktree, file), 'written by codex\n');
+  // Simulates an agent writing outside its worktree (e.g. into the main checkout).
+  if (process.env.FAKE_CODEX_ESCAPE) fs.writeFileSync(process.env.FAKE_CODEX_ESCAPE, 'stray write\n');
+  fs.writeFileSync(reportFile, JSON.stringify({ status: 'completed', summary: 'fake codex done', files_changed: [file], notes: '' }));
   console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100, cached_input_tokens: 50, output_tokens: 10 } }));
 });

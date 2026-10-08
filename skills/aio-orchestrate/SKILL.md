@@ -18,6 +18,7 @@ CLI: `aio` (installed with `npm link` from the AIO repo; store in `~/.aio`, over
 ## 2. Writing task specs
 - Put shared fields (agent, setup, verify, post_merge_verify, auto_retries, timeout, env, standing context) in `<repo>/aio.defaults.json`; task files hold only what is task-specific.
 - Split work so tasks touch disjoint files (`allowed_paths`); freeze shared contracts (types, API) yourself before dispatching.
+- When a task needs another task's code (UI needs the data layer), declare `"depends_on": ["<id>"]` instead of splitting waves by hand. `aio run` prints `BLOCKED` for it until the dependency is approved with `--merge`; then run `aio run` again and it branches from the merged code.
 - Prefer machine-checkable acceptance criteria. When quality is subjective (content, UX), encode the cheap heuristics as tests and add a `review` block so another agent checks the rubric before you do.
 - Environment variables go in `env` (task or `screenshots.server.env`), never inline shell syntax like `set X=1&&`.
 - If the agent-specific `model` matters, use `models: {"codex": "...", "agy": "..."}` so a failover does not pass one agent's model to the other.
@@ -45,6 +46,6 @@ For each finished wave, spawn one subagent (general-purpose) with this prompt, f
 Then run `aio approve <id> --merge` (post_merge_verify runs automatically) or `aio reject <id> -m "<feedback>"` and re-run.
 
 ## 6. After a wave
-- `aio clean <id>` for merged tasks (worktrees hold node_modules); `aio delete <id>` for experiments.
+- `aio approve --merge` already removes the worktree; `aio clean <id>` is for tasks you drop; `aio delete <id>` for experiments.
 - `aio costs` when deciding whether delegation is paying off.
 - Record only durable lessons (agent quirks, project gotchas) in `.context/DECISIONS.md` or memory; task specs and git history hold the rest.
