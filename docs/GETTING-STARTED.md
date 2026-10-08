@@ -49,24 +49,21 @@ Nếu `aio` không chạy được: mở lại terminal (PATH của npm link), h
 
 ## Bước 2 — Cài bộ khung điều phối vào dự án
 
-Copy template của AIO vào repo mới (thay `<APP>` bằng đường dẫn dự án):
-
 ```bash
-AIO=E:/app/AI-Multi-Agent-Orchestration
-APP=E:/app/<ten-du-an>
-cp -r "$AIO/templates/project/." "$APP/"
-mkdir -p "$APP/.claude/skills/aio-orchestrate"
-cp "$AIO/skills/aio-orchestrate/SKILL.md" "$APP/.claude/skills/aio-orchestrate/"
+cd E:/app/<ten-du-an>
+aio init
 ```
 
-PowerShell:
+Lệnh này an toàn để chạy lại bất cứ lúc nào:
 
-```powershell
-$AIO = "E:\app\AI-Multi-Agent-Orchestration"; $APP = "E:\app\<ten-du-an>"
-Copy-Item -Recurse -Force "$AIO\templates\project\*" $APP
-New-Item -ItemType Directory -Force "$APP\.claude\skills\aio-orchestrate" | Out-Null
-Copy-Item "$AIO\skills\aio-orchestrate\SKILL.md" "$APP\.claude\skills\aio-orchestrate\"
-```
+- File còn thiếu → **tạo** từ template.
+- `.claude/settings.json` đã có → **gộp** thêm hook SessionStart, giữ nguyên plugin/permission sẵn có, không nhân đôi hook.
+- `AGENTS.md` đã có (ví dụ template Expo) → **chèn** phần quy tắc AIO lên đầu, giữa hai marker `aio:agents`; lần chạy sau chỉ cập nhật phần đó.
+- `aio.defaults.json` được sinh theo **stack thật**: nhận diện npm/pnpm/yarn/bun từ lockfile, chỉ đưa vào `verify` các script `typecheck`/`lint`/`test` thực sự có trong `package.json`, và cảnh báo script nào còn thiếu.
+- Skill `aio-orchestrate` luôn được **cập nhật** lên bản AIO đang cài.
+- File khác đã có → **giữ nguyên** (thêm `--force` để ghi đè bằng template).
+
+Kết quả in ra dạng `created / merged / updated / kept` cho từng file, kèm cảnh báo (chưa phải git repo, thiếu script…).
 
 Những gì vừa được thêm:
 
@@ -83,9 +80,10 @@ Những gì vừa được thêm:
 | `docs/PRODUCT.md` | Khung spec sản phẩm |
 | `docs/tasks/EXAMPLE-01.json` | Mẫu task spec |
 
-**Lưu ý khi gộp:**
-- Nếu dự án đã có `.claude/settings.json` (ví dụ có `enabledPlugins`) hoặc `AGENTS.md` (template Expo có sẵn), **đừng ghi đè**: gộp khối `hooks` và các dòng hướng dẫn vào file cũ.
-- Sửa `aio.defaults.json` cho đúng stack: lệnh `setup` (`npm ci`, `pnpm i --frozen-lockfile`, `pip install -r …`), các lệnh `verify`, và `env` nếu cần (ví dụ `"env": {"CI": "1"}`).
+**Kiểm tra lại sau `aio init`:**
+- Đọc các cảnh báo; thêm script còn thiếu vào `package.json` (và làm cho chúng pass), hoặc sửa `verify` trong `aio.defaults.json`.
+- Stack không dùng Node (Python, Go…): tự điền `setup`/`verify` (ví dụ `pip install -r requirements.txt`, `pytest`).
+- Thêm `env` nếu các lệnh cần biến môi trường (ví dụ `"env": {"CI": "1"}`).
 
 Commit:
 
@@ -232,7 +230,7 @@ aio costs                      # xem việc giao agent có đáng không
 
 - [ ] Bước 0: `aio agents` → cả hai available
 - [ ] Repo git + baseline typecheck/lint/test xanh
-- [ ] Đã copy template, gộp `settings.json`/`AGENTS.md` nếu có sẵn, sửa `aio.defaults.json`
+- [ ] `aio init`, xử lý cảnh báo, kiểm tra `aio.defaults.json`
 - [ ] Phiên Claude mới trả lời được "trạng thái dự án" ngay
 - [ ] `PRODUCT.md` + hợp đồng dữ liệu + `DECISIONS.md` đã có
 - [ ] Task của wave: vùng file riêng, tiêu chí đo được, có `review`/`screenshots` khi cần

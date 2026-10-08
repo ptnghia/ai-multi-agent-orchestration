@@ -18,6 +18,7 @@ Store: `~/.aio` (đổi bằng `AIO_HOME`).
 ## Lệnh
 
 ```bash
+aio init [dir]                       # cài bộ khung điều phối vào dự án (an toàn khi chạy lại)
 aio create tasks/T-001.json          # đăng ký task → queued (gộp <repo>/aio.defaults.json)
 aio run [ids] -j 3                   # chạy song song; mỗi task 1 dòng kết quả
 aio status                           # trạng thái + kết quả gần nhất (phát hiện task "running (stale)")

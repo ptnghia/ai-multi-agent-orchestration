@@ -7,6 +7,7 @@ import { commitContext, recordEvent, syncActive } from './context.js';
 import { runShell, tail } from './exec.js';
 import * as git from './git.js';
 import { AGENTS, agentStatusLines, resetAgents } from './agents.js';
+import { initProject } from './init.js';
 import { runTask, verifyTask } from './runner.js';
 import { isProcessAlive } from './util.js';
 import {
@@ -26,6 +27,7 @@ import type { AgentName, TaskResult, TaskSpec, TaskStatus } from './types.js';
 
 const USAGE = `aio — AI orchestrator (store: ${AIO_HOME})
 
+  aio init [dir] [--force]                install the orchestration scaffold into a project (safe to re-run)
   aio create <task.json...> [--force]     register tasks (status: queued); merges <repo>/aio.defaults.json
   aio run [id...] [-j N] [--force]        run tasks in parallel (default: all queued/rework); one line per task
           [--verbose]                     print full review packets instead
@@ -304,6 +306,19 @@ async function cmdDelete(id: string): Promise<void> {
   console.log(`${id} deleted`);
 }
 
+function cmdInit(dir: string | undefined, force: boolean): void {
+  const report = initProject(dir ?? '.', force);
+  console.log(`AIO scaffold in ${report.repo}`);
+  for (const f of report.files) console.log(`  ${f.action.padEnd(8)} ${f.file}${f.note ? `  (${f.note})` : ''}`);
+  for (const w of report.warnings) console.log(`warning: ${w}`);
+  const changed = report.files.some((f) => f.action !== 'kept');
+  console.log(
+    changed
+      ? '\nNext: review aio.defaults.json, fill docs/PRODUCT.md and .context/DECISIONS.md, commit, then open Claude Code in this folder (see docs/GETTING-STARTED.md in the AIO repo).'
+      : '\nAlready up to date.',
+  );
+}
+
 async function cmdSheet(ids: string[], out: string | undefined): Promise<void> {
   if (!ids.length) throw new Error('usage: aio sheet <id...> [-o file.png]');
   const files: string[] = [];
@@ -377,6 +392,8 @@ async function main(): Promise<void> {
       return cmdCosts();
     case 'delete':
       return cmdDelete(needId());
+    case 'init':
+      return cmdInit(args[0], force);
     case 'context': {
       const repo = path.resolve(args[0] ?? '.');
       syncActive(repo);
